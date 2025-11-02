@@ -8,24 +8,72 @@ import { io, userSocketMap } from "../server.js";
 export const getUsersForSidebar = async (req, res) => {
     try {
         const userId = req.user._id;
-        const filteredUsers = await User.find({ _id: { $ne: userId } }).select("-password")
 
-        // count number of messages not seen
-        const unseenMessages = {}
-        const promises = filteredUsers.map(async (user) => {
-            const messages = await Message.find({ senderId: user._id, receiverId: userId, seen: false })
-            if (messages.length > 0) {
-                unseenMessages[user._id] = messages.length;
+        // Use aggregation pipeline to get users and their unseen message counts in single query
+        const usersWithUnseenCounts = await User.aggregate([
+            // Match all users except current user
+            { $match: { _id: { $ne: userId } } },
+
+            // Lookup messages and count unseen ones
+            {
+                $lookup: {
+                    from: "messages",
+                    let: { targetUserId: "$_id" },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: {
+                                    $and: [
+                                        { $eq: ["$senderId", "$$targetUserId"] },
+                                        { $eq: ["$receiverId", userId] },
+                                        { $eq: ["$seen", false] }
+                                    ]
+                                }
+                            }
+                        },
+                        { $count: "unseenCount" }
+                    ],
+                    as: "unseenMessages"
+                }
+            },
+
+            // Project required fields with unseen count
+            {
+                $project: {
+                    _id: 1,
+                    email: 1,
+                    fullName: 1,
+                    profilePic: 1,
+                    bio: 1,
+                    unseenCount: {
+                        $ifNull: [{ $arrayElemAt: ["$unseenMessages.unseenCount", 0] }, 0]
+                    }
+                }
             }
-        })
-        await Promise.all(promises);
-        res.json({ success: true, users: filteredUsers, unseenMessages })
+        ]);
+
+        // Convert aggregation result to expected format
+        const filteredUsers = usersWithUnseenCounts.map(user => ({
+            _id: user._id,
+            email: user.email,
+            fullName: user.fullName,
+            profilePic: user.profilePic,
+            bio: user.bio
+        }));
+
+        const unseenMessages = {};
+        usersWithUnseenCounts.forEach(user => {
+            if (user.unseenCount > 0) {
+                unseenMessages[user._id.toString()] = user.unseenCount;
+            }
+        });
+
+        res.json({ success: true, users: filteredUsers, unseenMessages });
     } catch (error) {
         console.log(error.message);
-        res.json({ success: false, users: filteredUsers, unseenMessages })
+        res.json({ success: false, message: error.message });
     }
 }
-
 // Get all message for a selected user
 export const getMessages = async (req, res) => {
     try {
