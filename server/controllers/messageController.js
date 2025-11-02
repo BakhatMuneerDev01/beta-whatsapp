@@ -4,17 +4,69 @@ import User from "../models/User.js";
 import { io, userSocketMap } from "../server.js";
 
 
+// Get all message for a selected user
+export const getMessages = async (req, res) => {
+    try {
+        const { id: selectedUserId } = req.params;
+        const myId = req.user._id;
+        const { cursor, limit = 50 } = req.query; // MODIFIED: Added pagination parameters
+
+        let query = {
+            $or: [
+                { senderId: myId, receiverId: selectedUserId },
+                { senderId: selectedUserId, receiverId: myId }
+            ]
+        };
+
+        // MODIFIED: Added cursor-based pagination
+        if (cursor) {
+            query.createdAt = { $lt: new Date(cursor) };
+        }
+
+        const messages = await Message.find(query)
+            .sort({ createdAt: -1 })
+            .limit(parseInt(limit));
+
+        await Message.updateMany({ senderId: selectedUserId, receiverId: myId }, { seen: true });
+
+        // MODIFIED: Return pagination metadata
+        const nextCursor = messages.length > 0 ? messages[messages.length - 1].createdAt : null;
+        const hasMore = messages.length === parseInt(limit);
+
+        res.json({
+            success: true,
+            messages,
+            pagination: {
+                nextCursor,
+                hasMore,
+                limit: parseInt(limit)
+            }
+        });
+    } catch (error) {
+        console.log(error.message);
+        res.json({ success: false, message: error.message });
+    }
+}
+
 // Get all users except the logged in user
 export const getUsersForSidebar = async (req, res) => {
     try {
         const userId = req.user._id;
+        const { cursor, limit = 50 } = req.query; // MODIFIED: Added pagination parameters
 
-        // Use aggregation pipeline to get users and their unseen message counts in single query
+        let matchStage = { $match: { _id: { $ne: userId } } };
+
+        // MODIFIED: Added cursor-based pagination for users
+        if (cursor) {
+            matchStage = {
+                $match: {
+                    _id: { $ne: userId, $lt: new mongoose.Types.ObjectId(cursor) }
+                }
+            };
+        }
+
         const usersWithUnseenCounts = await User.aggregate([
-            // Match all users except current user
-            { $match: { _id: { $ne: userId } } },
-
-            // Lookup messages and count unseen ones
+            matchStage,
             {
                 $lookup: {
                     from: "messages",
@@ -36,8 +88,6 @@ export const getUsersForSidebar = async (req, res) => {
                     as: "unseenMessages"
                 }
             },
-
-            // Project required fields with unseen count
             {
                 $project: {
                     _id: 1,
@@ -49,10 +99,16 @@ export const getUsersForSidebar = async (req, res) => {
                         $ifNull: [{ $arrayElemAt: ["$unseenMessages.unseenCount", 0] }, 0]
                     }
                 }
-            }
+            },
+            { $sort: { _id: -1 } }, // MODIFIED: Sort for consistent pagination
+            { $limit: parseInt(limit) } // MODIFIED: Added limit
         ]);
 
-        // Convert aggregation result to expected format
+        // MODIFIED: Calculate next cursor for users
+        const nextCursor = usersWithUnseenCounts.length > 0 ?
+            usersWithUnseenCounts[usersWithUnseenCounts.length - 1]._id : null;
+        const hasMore = usersWithUnseenCounts.length === parseInt(limit);
+
         const filteredUsers = usersWithUnseenCounts.map(user => ({
             _id: user._id,
             email: user.email,
@@ -68,28 +124,19 @@ export const getUsersForSidebar = async (req, res) => {
             }
         });
 
-        res.json({ success: true, users: filteredUsers, unseenMessages });
+        res.json({
+            success: true,
+            users: filteredUsers,
+            unseenMessages,
+            pagination: {
+                nextCursor,
+                hasMore,
+                limit: parseInt(limit)
+            }
+        });
     } catch (error) {
         console.log(error.message);
         res.json({ success: false, message: error.message });
-    }
-}
-// Get all message for a selected user
-export const getMessages = async (req, res) => {
-    try {
-        const { id: selectedUserId } = req.params;
-        const myId = req.user._id;
-        const messages = await Message.find({
-            $or: [
-                { senderId: myId, receiverId: selectedUserId },
-                { senderId: selectedUserId, receiverId: myId }
-            ]
-        })
-        await Message.updateMany({ senderId: selectedUserId, receiverId: myId }, { seen: true });
-        res.json({ success: true, messages })
-    } catch (error) {
-        console.log(error.message);
-        res.json({ success: false, message: error.message })
     }
 }
 

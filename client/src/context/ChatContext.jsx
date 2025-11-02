@@ -12,25 +12,39 @@ export const ChatProvider = ({ children }) => {
 
     const { socket, axios } = useContext(AuthContext);
 
-    // function to get all users for sidebar
-    const getUsers = async () => {
+    // function to get messages for selected user
+    const getMessages = async (userId, cursor = null) => { // MODIFIED: Added cursor parameter
         try {
-            const { data } = await axios.get("/api/messages/users");
+            const params = cursor ? `?cursor=${cursor}&limit=50` : '?limit=50'; // MODIFIED: Added pagination params
+            const { data } = await axios.get(`/api/messages/${userId}${params}`);
             if (data.success) {
-                setUsers(data.users);
-                setUnseenMessages(data.unseenMessages);
+                // MODIFIED: Handle paginated response
+                if (cursor) {
+                    setMessages(prevMessages => [...prevMessages, ...data.messages]);
+                } else {
+                    setMessages(data.messages);
+                }
+                return data.pagination; // MODIFIED: Return pagination info
             }
         } catch (error) {
-            toast.error(error.message); // Fixed typo: messages to message
+            toast.error(error.message);
         }
     }
 
-    // function to get messages for selected user
-    const getMessages = async (userId) => {
+    // function to get all users for sidebar
+    const getUsers = async (cursor = null) => { // MODIFIED: Added cursor parameter
         try {
-            const { data } = await axios.get(`/api/messages/${userId}`);
+            const params = cursor ? `?cursor=${cursor}&limit=50` : '?limit=50'; // MODIFIED: Added pagination params
+            const { data } = await axios.get(`/api/messages/users${params}`);
             if (data.success) {
-                setMessages(data.messages);
+                // MODIFIED: Handle paginated response
+                if (cursor) {
+                    setUsers(prevUsers => [...prevUsers, ...data.users]);
+                } else {
+                    setUsers(data.users);
+                }
+                setUnseenMessages(data.unseenMessages);
+                return data.pagination; // MODIFIED: Return pagination info
             }
         } catch (error) {
             toast.error(error.message);
