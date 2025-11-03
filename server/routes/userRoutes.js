@@ -8,6 +8,6 @@ const userRouter = express.Router();
 userRouter.post("/signup", validateSignup, handleValidationErrors, signup); // MODIFIED: Added validation middleware
 userRouter.post("/login", validateLogin, handleValidationErrors, login); // MODIFIED: Added validation middleware
 userRouter.put("/update-profile", protectRoute, validateProfile, handleValidationErrors, updateProfile); // MODIFIED: Added validation middleware
-userRouter.post("/check", protectRoute, checkAuth);
+userRouter.get("/check", protectRoute, checkAuth); // MODIFIED: Changed from POST to GET
 
 export default userRouter;
