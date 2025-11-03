@@ -4,7 +4,6 @@ import User from "../models/User.js";
 import bcrypt from 'bcryptjs';
 
 // Signup new user
-// MODIFIED: Added input sanitization at controller level
 export const signup = async (req, res) => {
     const { fullName, email, password, bio } = req.body;
     try {
@@ -45,20 +44,23 @@ export const signup = async (req, res) => {
 export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
-        const userData = await User.findOne({ email })
+        // MODIFIED: Sanitize email input
+        const sanitizedEmail = email.toLowerCase().trim();
+
+        const userData = await User.findOne({ email: sanitizedEmail })
         if (!userData) {
-            return res.json({ success: false, message: "User not found" })
+            return res.status(404).json({ success: false, message: "User not found" });
         }
         const isPasswordCorrect = await bcrypt.compare(password, userData.password);
         if (!isPasswordCorrect) {
-            return res.json({ success: false, message: "Invalid credentials" })
+            return res.status(401).json({ success: false, message: "Invalid credentials" });
         }
         const token = generateToken(userData._id)
         res.json({ success: true, userData, token, message: "Login successful" })
 
     } catch (error) {
         console.log(error)
-        res.json({ success: false, message: error.message })
+        res.status(500).json({ success: false, message: "Internal server error" });
     }
 }
 
@@ -67,16 +69,28 @@ export const updateProfile = async (req, res) => {
     try {
         const { profilePic, bio, fullName } = req.body;
         const userId = req.user._id;
+
+        // MODIFIED: Sanitize inputs
+        const sanitizedFullName = fullName ? fullName.trim().substring(0, 50) : undefined;
+        const sanitizedBio = bio ? bio.trim().substring(0, 500) : undefined;
+
         let updatedUser;
         if (!profilePic) {
-            updatedUser = await User.findByIdAndUpdate(userId, { bio, fullName }, { new: true })
+            updatedUser = await User.findByIdAndUpdate(userId, {
+                bio: sanitizedBio,
+                fullName: sanitizedFullName
+            }, { new: true });
         } else {
             const upload = await cloudinary.uploader.upload(profilePic);
-            updatedUser = await User.findByIdAndUpdate(userId, { profilePic: upload.secure_url, bio, fullName }, { new: true })
+            updatedUser = await User.findByIdAndUpdate(userId, {
+                profilePic: upload.secure_url,
+                bio: sanitizedBio,
+                fullName: sanitizedFullName
+            }, { new: true });
         }
-        res.json({ success: true, user: updatedUser })
+        res.json({ success: true, user: updatedUser });
     } catch (error) {
-        console.log("Error updating profile:", error.message)
-        res.json({ success: false, message: error.message })
+        console.log("Error updating profile:", error.message);
+        res.status(500).json({ success: false, message: "Internal server error" });
     }
 }
