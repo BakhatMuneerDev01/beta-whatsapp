@@ -48,6 +48,7 @@ export const AuthProvider = ({ children }) => {
                 toast.success(data.message)
             } else {
                 toast.error(data.message)
+                console.log()
             }
         } catch (error) {
             toast.error(error.message)
