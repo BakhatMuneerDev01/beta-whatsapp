@@ -26,7 +26,7 @@ const authLimiter = rateLimit({
 // Message rate limiter - 100 requests per minute
 const messageLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
-    max: 10, 
+    max: 10,
     message: {
         error: "Too many messages, please slow down"
     },
@@ -53,7 +53,9 @@ io.on("connection", (socket) => {
 
 // Middleware setup
 app.use(express.json({ limit: "4mb" }));
-app.use(cors());
+app.use(cors({
+    origin: "*"
+}));
 
 // Api's imports
 import userRouter from './routes/userRoutes.js';
@@ -61,8 +63,8 @@ import messageRouter from './routes/messageRoutes.js';
 import { error } from 'console';
 
 // Api's setup
-app.use("/api/auth",authLimiter, userRouter);
-app.use("/api/messages",messageLimiter, messageRouter);
+app.use("/api/auth", authLimiter, userRouter);
+app.use("/api/messages", messageLimiter, messageRouter);
 
 app.use("/api/status", (req, res) => res.send("Server is live"));
 
