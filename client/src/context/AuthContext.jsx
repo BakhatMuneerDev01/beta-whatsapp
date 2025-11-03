@@ -17,28 +17,22 @@ export const AuthProvider = ({ children }) => {
     // check if user is authenticated. If yes, set the user data and connect to socket
     const checkAuth = async () => {
         try {
-            // Check if token exists before making the request
-            if (!token) {
-                return;
-            }
-
+            if (!token) return;
             const { data } = await axios.get("/api/auth/check")
             if (data.success) {
                 setAuthUser(data.user)
                 connectSocket(data.user)
             } else {
-                // If check fails, clear the invalid token
+                // This clears auth even for non-critical errors
                 localStorage.removeItem("token");
                 setToken(null);
                 setAuthUser(null);
             }
         } catch (error) {
-            console.log("Auth check failed:", error.message);
-            // Clear invalid token on error
+            // This catches network errors and clears valid auth
             localStorage.removeItem("token");
             setToken(null);
             setAuthUser(null);
-            // Don't show toast for auth errors to avoid confusion
         }
     }
     // login function to handle user authentication and socket connection
