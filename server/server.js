@@ -54,7 +54,11 @@ io.on("connection", (socket) => {
 // Middleware setup
 app.use(express.json({ limit: "4mb" }));
 app.use(cors({
+<<<<<<< HEAD
     origin: "*"
+=======
+    origin: "http://localhost:5000"
+>>>>>>> fcdde9ebf298ba998a6855f23b9a076d0547b9f7
 }));
 
 // Api's imports
