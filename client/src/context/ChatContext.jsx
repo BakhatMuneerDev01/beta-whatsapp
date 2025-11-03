@@ -69,6 +69,7 @@ export const ChatProvider = ({ children }) => {
     }
 
     // function to subscribe to message for selected user
+    // MODIFIED: Added handler for updated messages
     const subscribeToMessages = () => {
         if (!socket) return;
         socket.on("newMessage", (newMessage) => {
@@ -82,6 +83,15 @@ export const ChatProvider = ({ children }) => {
                     [newMessage.senderId]: prevUnseenMessages[newMessage.senderId] ? prevUnseenMessages[newMessage.senderId] + 1 : 1
                 }));
             }
+        });
+
+        // MODIFIED: Handle message updates (for images that finished uploading)
+        socket.on("messageUpdated", (updatedMessage) => {
+            setMessages(prevMessages =>
+                prevMessages.map(msg =>
+                    msg._id === updatedMessage._id ? updatedMessage : msg
+                )
+            );
         });
     }
 

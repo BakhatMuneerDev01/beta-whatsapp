@@ -2,6 +2,7 @@ import cloudinary from "../lib/cloudinary.js";
 import { generateToken } from "../lib/utils.js";
 import User from "../models/User.js";
 import bcrypt from 'bcryptjs';
+import { imageUploadQueue } from "../lib/queue.js";
 
 // Signup new user
 export const signup = async (req, res) => {
@@ -70,24 +71,41 @@ export const updateProfile = async (req, res) => {
         const { profilePic, bio, fullName } = req.body;
         const userId = req.user._id;
 
-        // MODIFIED: Sanitize inputs
         const sanitizedFullName = fullName ? fullName.trim().substring(0, 50) : undefined;
         const sanitizedBio = bio ? bio.trim().substring(0, 500) : undefined;
 
         let updatedUser;
+
         if (!profilePic) {
             updatedUser = await User.findByIdAndUpdate(userId, {
                 bio: sanitizedBio,
                 fullName: sanitizedFullName
             }, { new: true });
         } else {
-            const upload = await cloudinary.uploader.upload(profilePic);
+            // MODIFIED: Move profile picture upload to background queue
+            const job = await imageUploadQueue.add({
+                image: profilePic,
+                type: 'profile',
+                userId
+            });
+
+            // Update user immediately with placeholder
             updatedUser = await User.findByIdAndUpdate(userId, {
-                profilePic: upload.secure_url,
+                profilePic: 'uploading',
                 bio: sanitizedBio,
                 fullName: sanitizedFullName
             }, { new: true });
+
+            // Process upload in background
+            job.finished().then(async (result) => {
+                if (result.success) {
+                    await User.findByIdAndUpdate(userId, {
+                        profilePic: result.imageUrl
+                    });
+                }
+            }).catch(console.error);
         }
+
         res.json({ success: true, user: updatedUser });
     } catch (error) {
         console.log("Error updating profile:", error.message);

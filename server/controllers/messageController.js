@@ -2,6 +2,7 @@ import cloudinary from "../lib/cloudinary.js";
 import Message from "../models/Message.js";
 import User from "../models/User.js";
 import { io, userSocketMap } from "../server.js";
+import { imageUploadQueue } from "../lib/queue.js";
 
 
 // Get all message for a selected user
@@ -161,24 +162,59 @@ export const sendMessage = async (req, res) => {
         let imageUrl;
 
         if (image) {
-            const uploadResponse = await cloudinary.uploader.upload(image); // Added await
-            imageUrl = uploadResponse.secure_url;
+            // MODIFIED: Move image upload to background queue
+            const job = await imageUploadQueue.add({
+                image,
+                type: 'message',
+                senderId,
+                receiverId
+            });
+
+            // Return immediately without waiting for upload
+            const newMessage = await Message.create({
+                senderId,
+                receiverId,
+                text,
+                image: 'uploading' // Placeholder
+            });
+
+            // Process upload in background
+            job.finished().then(async (result) => {
+                if (result.success) {
+                    await Message.findByIdAndUpdate(newMessage._id, {
+                        image: result.imageUrl
+                    });
+
+                    // Notify clients of updated message
+                    const updatedMessage = await Message.findById(newMessage._id);
+                    const receiverSocketId = userSocketMap[receiverId];
+                    if (receiverSocketId) {
+                        io.to(receiverSocketId).emit("messageUpdated", updatedMessage);
+                    }
+                    // Also notify sender
+                    const senderSocketId = userSocketMap[senderId];
+                    if (senderSocketId) {
+                        io.to(senderSocketId).emit("messageUpdated", updatedMessage);
+                    }
+                }
+            }).catch(console.error);
+
+            res.json({ success: true, newMessage });
+        } else {
+            // Text-only message (immediate processing)
+            const newMessage = await Message.create({
+                senderId,
+                receiverId,
+                text
+            });
+
+            const receiverSocketId = userSocketMap[receiverId];
+            if (receiverSocketId) {
+                io.to(receiverSocketId).emit("newMessage", newMessage);
+            }
+
+            res.json({ success: true, newMessage });
         }
-
-        const newMessage = await Message.create({
-            senderId,
-            receiverId,
-            text,
-            image: imageUrl
-        });
-
-        // Emit the new message to the receiver socket
-        const receiverSocketId = userSocketMap[receiverId];
-        if (receiverSocketId) {
-            io.to(receiverSocketId).emit("newMessage", newMessage);
-        }
-
-        res.json({ success: true, newMessage }); // Fixed response
     } catch (error) {
         console.log(error.message);
         res.json({ success: false, message: error.message });
