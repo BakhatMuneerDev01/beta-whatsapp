@@ -4,31 +4,40 @@ import User from "../models/User.js";
 import bcrypt from 'bcryptjs';
 
 // Signup new user
+// MODIFIED: Added input sanitization at controller level
 export const signup = async (req, res) => {
     const { fullName, email, password, bio } = req.body;
     try {
+        // MODIFIED: Additional server-side validation
         if (!fullName || !email || !password || !bio) {
-            return res.json({ success: false, message: "Missing Details" })
+            return res.status(400).json({ success: false, message: "All fields are required" });
         }
 
-        const user = await User.findOne({ email })
+        // MODIFIED: Sanitize inputs
+        const sanitizedFullName = fullName.trim().substring(0, 50);
+        const sanitizedBio = bio.trim().substring(0, 500);
+        const sanitizedEmail = email.toLowerCase().trim();
+
+        const user = await User.findOne({ email: sanitizedEmail })
         if (user) {
-            return res.json({ success: false, message: "Account already exists" })
+            return res.status(409).json({ success: false, message: "Account already exists" });
         }
-
 
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
         const newUser = await User.create({
-            fullName, email, password: hashedPassword, bio
+            fullName: sanitizedFullName,
+            email: sanitizedEmail,
+            password: hashedPassword,
+            bio: sanitizedBio
         });
 
         const token = generateToken(newUser._id);
-        res.json({ success: true, userData: newUser, token, message: "Account created successfully" })
+        res.status(201).json({ success: true, userData: newUser, token, message: "Account created successfully" });
     } catch (error) {
-        console.log("error during registration of user")
-        res.json({ success: false, message: error.message })
+        console.log("Error during user registration:", error.message);
+        res.status(500).json({ success: false, message: "Internal server error" });
     }
 }
 
