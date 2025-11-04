@@ -1,3 +1,5 @@
+// client/src/components/ChatContainer.js |||||||||||||||||||||||||||||||||||||||||||||
+
 import { useContext, useEffect, useRef, useState } from "react"
 import assets, { messagesDummyData } from "../assets/assets"
 import { formatMessageTime } from "../lib/utils";
@@ -26,37 +28,19 @@ const ChatContainer = () => {
     setInput(""); // Clear input after sending
   }
 
-  // FIXED: Remove temporary "uploading" message display
-
   const handleSendImage = async (e) => {
     const file = e.target.files[0];
     if (!file || !file.type.startsWith("image/")) {
-      toast.error("Please select an image file");
+      toast.error("select an image file")
       return;
     }
-
-    // FIXED: Show loading toast
-    const loadingToast = toast.loading("Uploading image...");
-
     const reader = new FileReader();
     reader.onloadend = async () => {
-      try {
-        const success = await sendMessage({ image: reader.result });
-        if (success) {
-          toast.success("Image sent successfully", { id: loadingToast });
-        } else {
-          toast.error("Failed to send image", { id: loadingToast });
-        }
-      } catch (error) {
-        toast.error("Failed to send image", { id: loadingToast });
-      }
-      e.target.value = "";
-    };
-    reader.onerror = () => {
-      toast.error("Failed to read image file", { id: loadingToast });
-    };
+      await sendMessage({ image: reader.result });
+      e.target.value = ""; // Fixed typo: 'ke' to 'e'
+    }
     reader.readAsDataURL(file);
-  };
+  }
 
   // Add this function for send button click
   const handleSendButtonClick = () => {
@@ -76,6 +60,11 @@ const ChatContainer = () => {
       scrollEnd.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]); // Added messages dependency
+
+  // MODIFIED: Sort messages by timestamp in ascending order (oldest to newest)
+  const sortedMessages = [...messages].sort((a, b) =>
+    new Date(a.createdAt) - new Date(b.createdAt)
+  );
 
   return selectedUser ? (
     <div className="h-full overflow-scroll relative backdrop-blur-lg">
@@ -98,7 +87,8 @@ const ChatContainer = () => {
 
       {/* ----------Chat area--------- */}
       <div className="flex flex-col h-[calc(100%-120px)] overflow-y-scroll p-3 pb-6">
-        {messages.map((msg, index) => (
+        {/* MODIFIED: Use sortedMessages instead of messages */}
+        {sortedMessages.map((msg, index) => (
           <div key={msg._id || index} className={`flex items-end gap-2 justify-end ${msg.senderId !== authUser._id && 'flex-row-reverse'}`}>
             {msg.image ? (
               msg.image === 'uploading' ? (
