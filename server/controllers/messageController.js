@@ -153,59 +153,86 @@ export const markMessageAsSeen = async (req, res) => {
     }
 }
 
-// send message to selected user
 export const sendMessage = async (req, res) => {
     try {
         const { text, image } = req.body;
         const receiverId = req.params.id;
         const senderId = req.user._id;
+
+        // MODIFIED: Better validation and error handling
+        if (!text && !image) {
+            return res.status(400).json({
+                success: false,
+                message: "Message must contain text or image"
+            });
+        }
+
         let imageUrl;
 
-        if (image) {
-            // MODIFIED: Move image upload to background queue
-            const job = await imageUploadQueue.add({
+        if (image && image !== 'uploading') {
+            // MODIFIED: Improved job creation with error handling
+            const job = await imageUploadQueue.add('message-image-upload', {
                 image,
                 type: 'message',
-                senderId,
-                receiverId
-            });
-
-            // Return immediately without waiting for upload
-            const newMessage = await Message.create({
-                senderId,
-                receiverId,
-                text,
-                image: 'uploading' // Placeholder
-            });
-
-            // Process upload in background
-            job.finished().then(async (result) => {
-                if (result.success) {
-                    await Message.findByIdAndUpdate(newMessage._id, {
-                        image: result.imageUrl
-                    });
-
-                    // Notify clients of updated message
-                    const updatedMessage = await Message.findById(newMessage._id);
-                    const receiverSocketId = userSocketMap[receiverId];
-                    if (receiverSocketId) {
-                        io.to(receiverSocketId).emit("messageUpdated", updatedMessage);
-                    }
-                    // Also notify sender
-                    const senderSocketId = userSocketMap[senderId];
-                    if (senderSocketId) {
-                        io.to(senderSocketId).emit("messageUpdated", updatedMessage);
-                    }
+                senderId: senderId.toString(),
+                receiverId: receiverId.toString()
+            }, {
+                attempts: 3,
+                backoff: {
+                    type: 'exponential',
+                    delay: 1000
                 }
-            }).catch(console.error);
+            });
 
-            res.json({ success: true, newMessage });
-        } else {
-            // Text-only message (immediate processing)
+            // Create message immediately with uploading state
             const newMessage = await Message.create({
                 senderId,
                 receiverId,
-                text
+                text: text || '', // Ensure text is not undefined
+                image: 'uploading'
+            });
+
+            // Process upload in background with better error handling
+            job.finished().then(async (result) => {
+                try {
+                    if (result.success) {
+                        await Message.findByIdAndUpdate(newMessage._id, {
+                            image: result.imageUrl
+                        });
+
+                        // Notify clients of updated message
+                        const updatedMessage = await Message.findById(newMessage._id);
+                        const receiverSocketId = userSocketMap[receiverId];
+                        if (receiverSocketId) {
+                            io.to(receiverSocketId).emit("messageUpdated", updatedMessage);
+                        }
+                        // Also notify sender
+                        const senderSocketId = userSocketMap[senderId];
+                        if (senderSocketId) {
+                            io.to(senderSocketId).emit("messageUpdated", updatedMessage);
+                        }
+                    } else {
+                        console.error('Image upload failed:', result.error);
+                        // Optionally update message to indicate failure
+                        await Message.findByIdAndUpdate(newMessage._id, {
+                            image: null,
+                            text: text ? `${text} [Image upload failed]` : '[Image upload failed]'
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error processing upload completion:', error);
+                }
+            }).catch(error => {
+                console.error('Job failed:', error);
+            });
+
+            return res.json({ success: true, newMessage });
+        } else {
+            // Text-only message or image is already 'uploading' (shouldn't happen)
+            const newMessage = await Message.create({
+                senderId,
+                receiverId,
+                text: text || ''
             });
 
             const receiverSocketId = userSocketMap[receiverId];
@@ -213,10 +240,10 @@ export const sendMessage = async (req, res) => {
                 io.to(receiverSocketId).emit("newMessage", newMessage);
             }
 
-            res.json({ success: true, newMessage });
+            return res.json({ success: true, newMessage });
         }
     } catch (error) {
-        console.log(error.message);
-        res.json({ success: false, message: error.message });
+        console.log("Send message error:", error.message);
+        res.status(500).json({ success: false, message: error.message });
     }
 }

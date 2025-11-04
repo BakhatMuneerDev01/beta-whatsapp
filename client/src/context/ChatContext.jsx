@@ -52,18 +52,39 @@ export const ChatProvider = ({ children }) => {
     }
 
     // function to send message to a selected user
+    // MODIFIED: Improved error handling for message sending
     const sendMessage = async (messageData) => {
         try {
+            // MODIFIED: Validate message data before sending
+            if (!messageData.text && !messageData.image) {
+                toast.error("Message cannot be empty");
+                return false;
+            }
+
             const { data } = await axios.post(`/api/messages/send/${selectedUser._id}`, messageData);
             if (data.success) {
-                setMessages((prevMessages) => [...prevMessages, data.newMessage]); // Fixed: newMessages to newMessage
+                // Only add to local state if it's a text message
+                // Image messages will be added via the background job completion
+                if (!messageData.image) {
+                    setMessages((prevMessages) => [...prevMessages, data.newMessage]);
+                }
                 return true;
             } else {
-                toast.error(data.message);
+                toast.error(data.message || "Failed to send message");
                 return false;
             }
         } catch (error) {
-            toast.error(error.message);
+            console.error("Send message error:", error);
+            // MODIFIED: Better error message handling
+            if (error.response?.data?.message) {
+                toast.error(error.response.data.message);
+            } else if (error.response?.data?.errors) {
+                // Handle validation errors
+                const validationErrors = error.response.data.errors;
+                toast.error(validationErrors[0]?.msg || "Validation failed");
+            } else {
+                toast.error("Failed to send message");
+            }
             return false;
         }
     }

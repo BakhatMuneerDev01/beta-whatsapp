@@ -37,6 +37,7 @@ export const validateLogin = [
 ];
 
 // Validation rules for messages
+// MODIFIED: Updated image validation to handle both base64 strings and placeholder values
 export const validateMessage = [
     body('text')
         .optional()
@@ -47,11 +48,20 @@ export const validateMessage = [
 
     body('image')
         .optional()
-        .isBase64()
-        .withMessage('Image must be a valid base64 string')
+        .custom((value) => {
+            // Allow base64 strings, data URLs, or the 'uploading' placeholder
+            if (value === 'uploading' || value === null || value === undefined) {
+                return true;
+            }
+            if (typeof value === 'string' && (value.startsWith('data:image') || value.length > 100)) {
+                return true;
+            }
+            throw new Error('Image must be a valid base64 string or data URL');
+        })
+        .withMessage('Image must be a valid base64 string or data URL')
 ];
 
-// Validation rules for profile updates
+// MODIFIED: Updated profile validation
 export const validateProfile = [
     body('fullName')
         .optional()
@@ -69,8 +79,17 @@ export const validateProfile = [
 
     body('profilePic')
         .optional()
-        .isBase64()
-        .withMessage('Profile picture must be a valid base64 string')
+        .custom((value) => {
+            // Allow base64 strings, data URLs, or the 'uploading' placeholder
+            if (value === 'uploading' || value === null || value === undefined) {
+                return true;
+            }
+            if (typeof value === 'string' && (value.startsWith('data:image') || value.length > 100)) {
+                return true;
+            }
+            throw new Error('Profile picture must be a valid base64 string or data URL');
+        })
+        .withMessage('Profile picture must be a valid base64 string or data URL')
 ];
 
 // Middleware to handle validation errors

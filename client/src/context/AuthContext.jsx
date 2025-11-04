@@ -3,7 +3,8 @@ import axios from 'axios';
 import toast from "react-hot-toast";
 import io from 'socket.io-client';
 
-const backendUrl = import.meta.env.VITE_BACKEND_URL;
+// Use environment variable with fallback for development
+const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 axios.defaults.baseURL = backendUrl;
 
 export const AuthContext = createContext();
@@ -14,6 +15,7 @@ export const AuthProvider = ({ children }) => {
     const [authUser, setAuthUser] = useState(null);
     const [onlineUsers, setOnlineUsers] = useState([]);
     const [socket, setSocket] = useState(null);
+
     // check if user is authenticated. If yes, set the user data and connect to socket
     const checkAuth = async () => {
         try {
@@ -23,18 +25,18 @@ export const AuthProvider = ({ children }) => {
                 setAuthUser(data.user)
                 connectSocket(data.user)
             } else {
-                // This clears auth even for non-critical errors
                 localStorage.removeItem("token");
                 setToken(null);
                 setAuthUser(null);
             }
         } catch (error) {
-            // This catches network errors and clears valid auth
+            console.error("Auth check failed:", error);
             localStorage.removeItem("token");
             setToken(null);
             setAuthUser(null);
         }
     }
+
     // login function to handle user authentication and socket connection
     const login = async (state, credentials) => {
         try {
@@ -48,10 +50,10 @@ export const AuthProvider = ({ children }) => {
                 toast.success(data.message)
             } else {
                 toast.error(data.message)
-                console.log()
             }
         } catch (error) {
-            toast.error(error.message)
+            console.error("Login error:", error);
+            toast.error(error.response?.data?.message || error.message)
         }
     }
     // Logout function to handle user logout and socket disconnection
@@ -114,6 +116,7 @@ export const AuthProvider = ({ children }) => {
 
         if (token) {
             axios.defaults.headers.common["token"] = token;
+            axios.defaults.headers.common["Content-Type"] = "application/json";
             console.log("Axios headers set:", axios.defaults.headers.common["token"]);
             checkAuth();
         }
