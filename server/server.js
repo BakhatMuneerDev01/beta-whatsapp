@@ -10,13 +10,28 @@ const app = express();
 const server = http.createServer(app);
 
 // Initialize socket.io server
+// Update Socket.io initialization for Vercel compatibility
 export const io = new Server(server, {
     cors: {
-        origin: ["http://localhost:5173", "https://beta-whatsapp-frontend.vercel.app"],
+        origin: [
+            "http://localhost:5173",
+            "https://beta-whatsapp-frontend.vercel.app",
+            "http://localhost:5174"
+        ],
         methods: ["GET", "POST", "PUT"],
-        credentials: true
-    }
-})
+        credentials: true,
+        allowedHeaders: ["Content-Type", "Authorization", "token"]
+    },
+    transports: ['polling'], // FIXED: Use only polling for Vercel
+    allowUpgrades: false, // FIXED: Prevent upgrade attempts to websocket
+    pingTimeout: 60000,
+    pingInterval: 25000
+});
+
+// Add connection state handling
+io.engine.on("connection_error", (err) => {
+    console.log("Socket.io connection error:", err);
+});
 
 // store online users
 export const userSocketMap = {}; // {userId: socketId}

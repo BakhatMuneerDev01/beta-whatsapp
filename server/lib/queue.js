@@ -11,41 +11,48 @@ const imageUploadQueue = new Bull('image upload', {
 });
 
 // MODIFIED: Improved job processing with better error handling
+// lib/queue.js - Fix job data access
 imageUploadQueue.process(async (job) => {
     try {
         console.log('Processing image upload job:', job.id);
-        const { image, type, senderId, receiverId, userId } = job.data;
+        const { image, type, senderId, receiverId, userId, messageId } = job.data;
 
-        if (!image) {
-            throw new Error('No image data provided');
+        if (!image || image === 'uploading') {
+            throw new Error('Invalid image data');
         }
 
-        // MODIFIED: Add folder and transformation options
+        // Remove data URL prefix if present
+        const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
+
         const uploadOptions = {
             folder: type === 'message' ? 'chat_messages' : 'profile_pictures',
+            resource_type: 'image',
             transformation: [
-                { width: 800, height: 800, crop: 'limit' }, // Resize large images
+                { width: 800, height: 800, crop: 'limit' },
                 { quality: 'auto' },
-                { format: 'webp' } // Convert to webp for better performance
+                { format: 'webp' }
             ]
         };
 
-        const uploadResponse = await cloudinary.uploader.upload(image, uploadOptions);
+        // Upload to Cloudinary
+        const uploadResponse = await cloudinary.uploader.upload(
+            `data:image/webp;base64,${base64Data}`,
+            uploadOptions
+        );
 
         console.log('Image uploaded successfully:', uploadResponse.secure_url);
         return {
             success: true,
             imageUrl: uploadResponse.secure_url,
             publicId: uploadResponse.public_id,
-            messageId: job.data.messageId,
-            userId
+            messageId: messageId,
+            userId: userId
         };
     } catch (error) {
         console.error('Image upload job failed:', error.message);
-        throw new Error(`Image upload failed: ${error.message}`);
+        throw error; // Re-throw to let Bull handle retries
     }
 });
-
 // MODIFIED: Add event listeners for job monitoring
 imageUploadQueue.on('completed', (job, result) => {
     console.log(`Job ${job.id} completed successfully`);

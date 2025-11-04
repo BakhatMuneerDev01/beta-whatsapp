@@ -52,22 +52,18 @@ export const ChatProvider = ({ children }) => {
     }
 
     // function to send message to a selected user
-    // MODIFIED: Improved error handling for message sending
+    // FIXED: Simplified sendMessage without temporary message handling
     const sendMessage = async (messageData) => {
         try {
-            // MODIFIED: Validate message data before sending
             if (!messageData.text && !messageData.image) {
                 toast.error("Message cannot be empty");
                 return false;
             }
 
             const { data } = await axios.post(`/api/messages/send/${selectedUser._id}`, messageData);
+
             if (data.success) {
-                // Only add to local state if it's a text message
-                // Image messages will be added via the background job completion
-                if (!messageData.image) {
-                    setMessages((prevMessages) => [...prevMessages, data.newMessage]);
-                }
+                setMessages((prevMessages) => [...prevMessages, data.newMessage]);
                 return true;
             } else {
                 toast.error(data.message || "Failed to send message");
@@ -75,25 +71,23 @@ export const ChatProvider = ({ children }) => {
             }
         } catch (error) {
             console.error("Send message error:", error);
-            // MODIFIED: Better error message handling
-            if (error.response?.data?.message) {
-                toast.error(error.response.data.message);
-            } else if (error.response?.data?.errors) {
-                // Handle validation errors
-                const validationErrors = error.response.data.errors;
-                toast.error(validationErrors[0]?.msg || "Validation failed");
-            } else {
-                toast.error("Failed to send message");
-            }
+            toast.error(error.response?.data?.message || "Failed to send message");
             return false;
         }
-    }
+    };
 
     // function to subscribe to message for selected user
-    // MODIFIED: Added handler for updated messages
+    // context/ChatContext.jsx - Improve subscribeToMessages
     const subscribeToMessages = () => {
-        if (!socket) return;
+        if (!socket) {
+            console.log('No socket available for subscription');
+            return;
+        }
+
+        console.log('Subscribing to socket messages');
+
         socket.on("newMessage", (newMessage) => {
+            console.log('📨 New message received:', newMessage);
             if (selectedUser && newMessage.senderId === selectedUser._id) {
                 newMessage.seen = true;
                 setMessages((prevMessages) => [...prevMessages, newMessage]);
@@ -106,13 +100,18 @@ export const ChatProvider = ({ children }) => {
             }
         });
 
-        // MODIFIED: Handle message updates (for images that finished uploading)
         socket.on("messageUpdated", (updatedMessage) => {
+            console.log('🔄 Message updated:', updatedMessage);
             setMessages(prevMessages =>
                 prevMessages.map(msg =>
                     msg._id === updatedMessage._id ? updatedMessage : msg
                 )
             );
+        });
+
+        // Add error handling for socket
+        socket.on("error", (error) => {
+            console.error('Socket error in ChatContext:', error);
         });
     }
 

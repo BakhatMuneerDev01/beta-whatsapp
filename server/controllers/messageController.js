@@ -153,13 +153,16 @@ export const markMessageAsSeen = async (req, res) => {
     }
 }
 
+// controller/messageController.js - Fix the sendMessage function
+// FIXED: Direct synchronous upload instead of queue
 export const sendMessage = async (req, res) => {
     try {
         const { text, image } = req.body;
         const receiverId = req.params.id;
         const senderId = req.user._id;
 
-        // MODIFIED: Better validation and error handling
+        console.log('Send message received:', { text, hasImage: !!image, receiverId, senderId });
+
         if (!text && !image) {
             return res.status(400).json({
                 success: false,
@@ -167,83 +170,57 @@ export const sendMessage = async (req, res) => {
             });
         }
 
-        let imageUrl;
+        let imageUrl = null;
 
+        // FIXED: Upload image synchronously before creating message
         if (image && image !== 'uploading') {
-            // MODIFIED: Improved job creation with error handling
-            const job = await imageUploadQueue.add('message-image-upload', {
-                image,
-                type: 'message',
-                senderId: senderId.toString(),
-                receiverId: receiverId.toString()
-            }, {
-                attempts: 3,
-                backoff: {
-                    type: 'exponential',
-                    delay: 1000
-                }
-            });
+            try {
+                const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
 
-            // Create message immediately with uploading state
-            const newMessage = await Message.create({
-                senderId,
-                receiverId,
-                text: text || '', // Ensure text is not undefined
-                image: 'uploading'
-            });
-
-            // Process upload in background with better error handling
-            job.finished().then(async (result) => {
-                try {
-                    if (result.success) {
-                        await Message.findByIdAndUpdate(newMessage._id, {
-                            image: result.imageUrl
-                        });
-
-                        // Notify clients of updated message
-                        const updatedMessage = await Message.findById(newMessage._id);
-                        const receiverSocketId = userSocketMap[receiverId];
-                        if (receiverSocketId) {
-                            io.to(receiverSocketId).emit("messageUpdated", updatedMessage);
-                        }
-                        // Also notify sender
-                        const senderSocketId = userSocketMap[senderId];
-                        if (senderSocketId) {
-                            io.to(senderSocketId).emit("messageUpdated", updatedMessage);
-                        }
-                    } else {
-                        console.error('Image upload failed:', result.error);
-                        // Optionally update message to indicate failure
-                        await Message.findByIdAndUpdate(newMessage._id, {
-                            image: null,
-                            text: text ? `${text} [Image upload failed]` : '[Image upload failed]'
-                        });
+                const uploadResponse = await cloudinary.uploader.upload(
+                    `data:image/webp;base64,${base64Data}`,
+                    {
+                        folder: 'chat_messages',
+                        resource_type: 'image',
+                        transformation: [
+                            { width: 800, height: 800, crop: 'limit' },
+                            { quality: 'auto' },
+                            { format: 'webp' }
+                        ]
                     }
-                } catch (error) {
-                    console.error('Error processing upload completion:', error);
-                }
-            }).catch(error => {
-                console.error('Job failed:', error);
-            });
+                );
 
-            return res.json({ success: true, newMessage });
-        } else {
-            // Text-only message or image is already 'uploading' (shouldn't happen)
-            const newMessage = await Message.create({
-                senderId,
-                receiverId,
-                text: text || ''
-            });
-
-            const receiverSocketId = userSocketMap[receiverId];
-            if (receiverSocketId) {
-                io.to(receiverSocketId).emit("newMessage", newMessage);
+                imageUrl = uploadResponse.secure_url;
+                console.log('Image uploaded successfully:', imageUrl);
+            } catch (uploadError) {
+                console.error('Image upload failed:', uploadError);
+                return res.status(500).json({
+                    success: false,
+                    message: "Failed to upload image"
+                });
             }
-
-            return res.json({ success: true, newMessage });
         }
+
+        // Create message with uploaded image URL
+        const newMessage = await Message.create({
+            senderId,
+            receiverId,
+            text: text || '',
+            image: imageUrl
+        });
+
+        console.log('Message created:', newMessage._id);
+
+        // Emit to receiver
+        const receiverSocketId = userSocketMap[receiverId];
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit("newMessage", newMessage);
+        }
+
+        return res.json({ success: true, newMessage });
+
     } catch (error) {
         console.log("Send message error:", error.message);
         res.status(500).json({ success: false, message: error.message });
     }
-}
+};

@@ -4,10 +4,7 @@ import toast from "react-hot-toast";
 import io from 'socket.io-client';
 
 // Enhanced environment variable handling with proper fallbacks
-const backendUrl = import.meta.env.VITE_BACKEND_URL ||
-    (import.meta.env.MODE === 'development'
-        ? 'http://localhost:5000'
-        : 'https://beta-whatsapp-backend.vercel.app');
+const backendUrl = import.meta.env.VITE_BACKEND_URL
 
 console.log('Backend URL:', backendUrl); // Debug log
 
@@ -107,9 +104,15 @@ export const AuthProvider = ({ children }) => {
             return false;
         }
     }
-    // Enhanced socket connection with better error handling
+    // context/AuthContext.jsx - Improved socket connection
+    // Update connectSocket function
     const connectSocket = (userData) => {
-        if (!userData || socket?.connected) return;
+        if (!userData) return;
+
+        // Disconnect existing socket
+        if (socket) {
+            socket.disconnect();
+        }
 
         console.log('Connecting socket to:', backendUrl);
 
@@ -117,21 +120,30 @@ export const AuthProvider = ({ children }) => {
             query: {
                 userId: userData._id,
             },
-            transports: ['websocket', 'polling'], // Explicitly specify transports
+            transports: ['polling'], // FIXED: Match backend transport
+            upgrade: false, // FIXED: Don't attempt to upgrade to websocket
             timeout: 10000,
-            forceNew: true
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000
         });
 
         newSocket.on("connect", () => {
-            console.log("Socket connected successfully");
+            console.log("✅ Socket connected successfully");
         });
 
         newSocket.on("connect_error", (error) => {
-            console.error("Socket connection error:", error);
+            console.error("❌ Socket connection error:", error.message);
+            // FIXED: Less verbose logging
         });
 
         newSocket.on("disconnect", (reason) => {
-            console.log("Socket disconnected:", reason);
+            console.log("🔌 Socket disconnected:", reason);
+        });
+
+        newSocket.on("error", (error) => {
+            console.error("💥 Socket error:", error.message);
         });
 
         setSocket(newSocket);
@@ -139,7 +151,12 @@ export const AuthProvider = ({ children }) => {
         newSocket.on("getOnlineUsers", (userIds) => {
             setOnlineUsers(userIds);
         });
+
+        newSocket.on("messageUpdated", (updatedMessage) => {
+            console.log("📨 Message updated received:", updatedMessage);
+        });
     };
+
     useEffect(() => {
         console.log("Current token:", token);
         console.log("Current authUser:", authUser);
