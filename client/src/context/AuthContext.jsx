@@ -3,8 +3,14 @@ import axios from 'axios';
 import toast from "react-hot-toast";
 import io from 'socket.io-client';
 
-// Use environment variable with fallback for development
-const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+// Enhanced environment variable handling with proper fallbacks
+const backendUrl = import.meta.env.VITE_BACKEND_URL ||
+    (import.meta.env.MODE === 'development'
+        ? 'http://localhost:5000'
+        : 'https://beta-whatsapp-backend.vercel.app');
+
+console.log('Backend URL:', backendUrl); // Debug log
+
 axios.defaults.baseURL = backendUrl;
 
 export const AuthContext = createContext();
@@ -20,10 +26,11 @@ export const AuthProvider = ({ children }) => {
     const checkAuth = async () => {
         try {
             if (!token) return;
-            const { data } = await axios.get("/api/auth/check")
+            console.log('Checking auth with token:', token ? 'present' : 'missing');
+            const { data } = await axios.get("/api/auth/check");
             if (data.success) {
-                setAuthUser(data.user)
-                connectSocket(data.user)
+                setAuthUser(data.user);
+                connectSocket(data.user);
             } else {
                 localStorage.removeItem("token");
                 setToken(null);
@@ -31,31 +38,36 @@ export const AuthProvider = ({ children }) => {
             }
         } catch (error) {
             console.error("Auth check failed:", error);
+            console.error("Error details:", error.response?.data);
             localStorage.removeItem("token");
             setToken(null);
             setAuthUser(null);
         }
-    }
-
+    };
     // login function to handle user authentication and socket connection
     const login = async (state, credentials) => {
         try {
-            const { data } = await axios.post(`/api/auth/${state}`, credentials)
+            console.log('Attempting login to:', `${backendUrl}/api/auth/${state}`);
+            const { data } = await axios.post(`/api/auth/${state}`, credentials);
             if (data.success) {
                 setAuthUser(data.userData);
                 connectSocket(data.userData);
                 axios.defaults.headers.common["token"] = data.token;
                 setToken(data.token);
                 localStorage.setItem("token", data.token);
-                toast.success(data.message)
+                toast.success(data.message);
             } else {
-                toast.error(data.message)
+                toast.error(data.message);
             }
         } catch (error) {
-            console.error("Login error:", error);
-            toast.error(error.response?.data?.message || error.message)
+            console.error("Login error details:", {
+                message: error.message,
+                response: error.response?.data,
+                config: error.config
+            });
+            toast.error(error.response?.data?.message || error.message || "Login failed");
         }
-    }
+    };
     // Logout function to handle user logout and socket disconnection
     const logout = async () => {
         localStorage.removeItem("token");
@@ -95,21 +107,39 @@ export const AuthProvider = ({ children }) => {
             return false;
         }
     }
-    // connect socket function to handle socket connection and online users updates
+    // Enhanced socket connection with better error handling
     const connectSocket = (userData) => {
         if (!userData || socket?.connected) return;
+
+        console.log('Connecting socket to:', backendUrl);
+
         const newSocket = io(backendUrl, {
             query: {
                 userId: userData._id,
-            }
+            },
+            transports: ['websocket', 'polling'], // Explicitly specify transports
+            timeout: 10000,
+            forceNew: true
         });
-        newSocket.connect();
+
+        newSocket.on("connect", () => {
+            console.log("Socket connected successfully");
+        });
+
+        newSocket.on("connect_error", (error) => {
+            console.error("Socket connection error:", error);
+        });
+
+        newSocket.on("disconnect", (reason) => {
+            console.log("Socket disconnected:", reason);
+        });
+
         setSocket(newSocket);
+
         newSocket.on("getOnlineUsers", (userIds) => {
             setOnlineUsers(userIds);
-        })
-    }
-
+        });
+    };
     useEffect(() => {
         console.log("Current token:", token);
         console.log("Current authUser:", authUser);
