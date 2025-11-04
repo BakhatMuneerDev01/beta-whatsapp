@@ -15,7 +15,6 @@ export const io = new Server(server, {
     cors: {
         origin: [
             "http://localhost:5173",
-            "https://beta-whatsapp-frontend.vercel.app",
             "http://localhost:5174"
         ],
         methods: ["GET", "POST", "PUT"],
@@ -52,7 +51,7 @@ io.on("connection", (socket) => {
 
 // Enhanced CORS configuration
 app.use(cors({
-    origin: ["http://localhost:5173", "https://beta-whatsapp-frontend.vercel.app"],
+    origin: ["http://localhost:5173"],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization", "token"]
