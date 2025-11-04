@@ -77,7 +77,6 @@ export const ChatProvider = ({ children }) => {
     };
 
     // function to subscribe to message for selected user
-    // context/ChatContext.jsx - Improve subscribeToMessages
     const subscribeToMessages = () => {
         if (!socket) {
             console.log('No socket available for subscription');
@@ -86,34 +85,48 @@ export const ChatProvider = ({ children }) => {
 
         console.log('Subscribing to socket messages');
 
-        socket.on("newMessage", (newMessage) => {
-            console.log('📨 New message received:', newMessage);
-            if (selectedUser && newMessage.senderId === selectedUser._id) {
-                newMessage.seen = true;
-                setMessages((prevMessages) => [...prevMessages, newMessage]);
-                axios.put(`/api/messages/mark/${newMessage._id}`);
-            } else {
-                setUnseenMessages((prevUnseenMessages) => ({
-                    ...prevUnseenMessages,
-                    [newMessage.senderId]: prevUnseenMessages[newMessage.senderId] ? prevUnseenMessages[newMessage.senderId] + 1 : 1
-                }));
-            }
-        });
+        try {
+            socket.on("newMessage", (newMessage) => {
+                try {
+                    console.log('📨 New message received:', newMessage);
+                    if (selectedUser && newMessage.senderId === selectedUser._id) {
+                        newMessage.seen = true;
+                        setMessages((prevMessages) => [...prevMessages, newMessage]);
+                        axios.put(`/api/messages/mark/${newMessage._id}`);
+                    } else {
+                        setUnseenMessages((prevUnseenMessages) => ({
+                            ...prevUnseenMessages,
+                            [newMessage.senderId]: prevUnseenMessages[newMessage.senderId] ? prevUnseenMessages[newMessage.senderId] + 1 : 1
+                        }));
+                    }
+                } catch (error) {
+                    console.error("Error processing new message:", error);
+                }
+            });
 
-        socket.on("messageUpdated", (updatedMessage) => {
-            console.log('🔄 Message updated:', updatedMessage);
-            setMessages(prevMessages =>
-                prevMessages.map(msg =>
-                    msg._id === updatedMessage._id ? updatedMessage : msg
-                )
-            );
-        });
+            socket.on("messageUpdated", (updatedMessage) => {
+                try {
+                    console.log('🔄 Message updated:', updatedMessage);
+                    setMessages(prevMessages =>
+                        prevMessages.map(msg =>
+                            msg._id === updatedMessage._id ? updatedMessage : msg
+                        )
+                    );
+                } catch (error) {
+                    console.error("Error processing message update:", error);
+                }
+            });
 
-        // Add error handling for socket
-        socket.on("error", (error) => {
-            console.error('Socket error in ChatContext:', error);
-        });
+            // FIXED: Enhanced socket error handling
+            socket.on("error", (error) => {
+                console.error('Socket error in ChatContext:', error);
+            });
+
+        } catch (error) {
+            console.error("Socket subscription failed:", error);
+        }
     }
+
 
     // function to unSubscribe from messages
     const unsubscribeFromMessages = () => {

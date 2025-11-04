@@ -105,56 +105,61 @@ export const AuthProvider = ({ children }) => {
         }
     }
     // context/AuthContext.jsx - Improved socket connection
-    // Update connectSocket function
     const connectSocket = (userData) => {
         if (!userData) return;
 
-        // Disconnect existing socket
-        if (socket) {
-            socket.disconnect();
+        try {
+            // Disconnect existing socket
+            if (socket) {
+                socket.disconnect();
+            }
+
+            console.log('Connecting socket to:', backendUrl);
+
+            const newSocket = io(backendUrl, {
+                query: {
+                    userId: userData._id,
+                },
+                transports: ['polling'],
+                upgrade: false,
+                timeout: 10000,
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000
+            });
+
+            // FIXED: Added comprehensive error handling for socket events
+            newSocket.on("connect", () => {
+                console.log("✅ Socket connected successfully");
+            });
+
+            newSocket.on("connect_error", (error) => {
+                console.error("❌ Socket connection error:", error.message);
+            });
+
+            newSocket.on("disconnect", (reason) => {
+                console.log("🔌 Socket disconnected:", reason);
+            });
+
+            newSocket.on("error", (error) => {
+                console.error("💥 Socket error:", error.message);
+            });
+
+            setSocket(newSocket);
+
+            newSocket.on("getOnlineUsers", (userIds) => {
+                try {
+                    setOnlineUsers(userIds);
+                } catch (error) {
+                    console.error("Error handling online users:", error);
+                }
+            });
+
+        } catch (error) {
+            console.error("Socket setup failed:", error.message);
+            // FIXED: Graceful degradation - app continues without socket
         }
-
-        console.log('Connecting socket to:', backendUrl);
-
-        const newSocket = io(backendUrl, {
-            query: {
-                userId: userData._id,
-            },
-            transports: ['polling'], // FIXED: Match backend transport
-            upgrade: false, // FIXED: Don't attempt to upgrade to websocket
-            timeout: 10000,
-            reconnection: true,
-            reconnectionAttempts: 5,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000
-        });
-
-        newSocket.on("connect", () => {
-            console.log("✅ Socket connected successfully");
-        });
-
-        newSocket.on("connect_error", (error) => {
-            console.error("❌ Socket connection error:", error.message);
-            // FIXED: Less verbose logging
-        });
-
-        newSocket.on("disconnect", (reason) => {
-            console.log("🔌 Socket disconnected:", reason);
-        });
-
-        newSocket.on("error", (error) => {
-            console.error("💥 Socket error:", error.message);
-        });
-
-        setSocket(newSocket);
-
-        newSocket.on("getOnlineUsers", (userIds) => {
-            setOnlineUsers(userIds);
-        });
-
-        newSocket.on("messageUpdated", (updatedMessage) => {
-            console.log("📨 Message updated received:", updatedMessage);
-        });
     };
 
     useEffect(() => {

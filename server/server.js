@@ -37,17 +37,40 @@ export const userSocketMap = {}; // {userId: socketId}
 
 // socket.io connection handler
 io.on("connection", (socket) => {
-    const userId = socket.handshake.query.userId;
-    console.log("User connected:", userId);
-    if (userId) userSocketMap[userId] = socket.id;
-    // Emit online users to all connected clients
-    io.emit("getOnlineUsers", Object.keys(userSocketMap));
+    try {
+        const userId = socket.handshake.query.userId;
+        console.log("User connected:", userId);
+
+        if (userId) {
+            userSocketMap[userId] = socket.id;
+            // Emit online users to all connected clients
+            io.emit("getOnlineUsers", Object.keys(userSocketMap));
+        }
+    } catch (error) {
+        console.error("Connection error:", error.message);
+        // FIXED: Added error handling for connection events
+    }
+
     socket.on("disconnect", () => {
-        console.log("User disconnected", userId)
-        delete userSocketMap[userId];
-        io.emit("getOnlineUsers", Object.keys(userSocketMap))
-    })
-})
+        try {
+            const userId = socket.handshake.query.userId;
+            console.log("User disconnected", userId);
+
+            if (userId && userSocketMap[userId]) {
+                delete userSocketMap[userId];
+                io.emit("getOnlineUsers", Object.keys(userSocketMap));
+            }
+        } catch (error) {
+            console.error("Disconnection error:", error.message);
+            // FIXED: Added error handling for disconnection events
+        }
+    });
+
+    // FIXED: Added error handling for custom socket events
+    socket.on("error", (error) => {
+        console.error("Socket error:", error.message);
+    });
+});
 
 // Enhanced CORS configuration
 app.use(cors({
