@@ -1,4 +1,4 @@
-import { createContext, useState, useContext, useMemo } from 'react';
+import { createContext, useState, useContext, useMemo, useEffect } from 'react';
 import { AuthContext } from './AuthContext';
 import toast from 'react-hot-toast';
 
@@ -11,7 +11,6 @@ export const ChatProvider = ({ children }) => {
     const [unseenMessages, setUnseenMessages] = useState({});
     const [users, setUsers] = useState([]);
 
-    // FIXED: Get authUser from AuthContext
     const { authUser, axios, socket } = useContext(AuthContext);
 
     // Function to get messages for a selected user
@@ -39,14 +38,14 @@ export const ChatProvider = ({ children }) => {
         }
     };
 
-    // FIXED: Enhanced sendMessage with optimistic updates and proper authUser access
+    // FIXED: Enhanced sendMessage with proper optimistic update handling
     const sendMessage = async (messageData) => {
         if (!selectedUser || !authUser) return;
 
         const tempId = `temp-${Date.now()}`;
         const optimisticMessage = {
             _id: tempId,
-            senderId: authUser._id, // FIXED: Now using authUser from context
+            senderId: authUser._id,
             receiverId: selectedUser._id,
             ...messageData,
             seen: false,
@@ -64,16 +63,16 @@ export const ChatProvider = ({ children }) => {
             const { data } = await axios.post(`/api/messages/send/${selectedUser._id}`, messageData);
 
             if (data.success) {
-                // Replace optimistic message with real one
+                // Remove optimistic message - the real one will come via socket or we'll add it directly
                 setOptimisticMessages(prev => {
                     const newState = { ...prev };
                     delete newState[tempId];
                     return newState;
                 });
 
-                // Real message will be added via socket or refetch
-                // Alternatively, we could update the messages state with the response message
-                // But the socket event might already handle this
+                // FIXED: Add the real message to messages state immediately
+                // This prevents the message from disappearing while waiting for socket events
+                setMessages(prev => [...prev, data.newMessage]);
             }
         } catch (error) {
             // Rollback on error
@@ -85,6 +84,40 @@ export const ChatProvider = ({ children }) => {
             toast.error("Failed to send message");
         }
     };
+
+    // FIXED: Add socket event listeners for real-time message updates
+    useEffect(() => {
+        if (!socket) return;
+
+        const handleNewMessage = (newMessage) => {
+            console.log('New message received via socket:', newMessage);
+            setMessages(prev => {
+                // Check if message already exists to avoid duplicates
+                const exists = prev.find(msg => msg._id === newMessage._id);
+                if (!exists) {
+                    return [...prev, newMessage];
+                }
+                return prev;
+            });
+        };
+
+        const handleMessageUpdated = (updatedMessage) => {
+            console.log('Message updated via socket:', updatedMessage);
+            setMessages(prev =>
+                prev.map(msg =>
+                    msg._id === updatedMessage._id ? updatedMessage : msg
+                )
+            );
+        };
+
+        socket.on("newMessage", handleNewMessage);
+        socket.on("messageUpdated", handleMessageUpdated);
+
+        return () => {
+            socket.off("newMessage", handleNewMessage);
+            socket.off("messageUpdated", handleMessageUpdated);
+        };
+    }, [socket]);
 
     // Combine real and optimistic messages
     const allMessages = useMemo(() => {
