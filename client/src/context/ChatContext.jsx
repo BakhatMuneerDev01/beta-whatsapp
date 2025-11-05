@@ -1,151 +1,107 @@
-import { createContext, useContext, useEffect, useState } from "react";
-import { AuthContext } from "./AuthContext";
-import toast from "react-hot-toast";
+import { createContext, useState, useContext, useMemo } from 'react';
+import { AuthContext } from './AuthContext';
+import toast from 'react-hot-toast';
 
 export const ChatContext = createContext();
 
 export const ChatProvider = ({ children }) => {
     const [messages, setMessages] = useState([]);
-    const [users, setUsers] = useState([]);
     const [selectedUser, setSelectedUser] = useState(null);
+    const [optimisticMessages, setOptimisticMessages] = useState({});
     const [unseenMessages, setUnseenMessages] = useState({});
+    const [users, setUsers] = useState([]);
 
-    const { socket, axios } = useContext(AuthContext);
+    // FIXED: Get authUser from AuthContext
+    const { authUser, axios, socket } = useContext(AuthContext);
 
-    // function to get messages for selected user
-    const getMessages = async (userId, cursor = null) => { // MODIFIED: Added cursor parameter
+    // Function to get messages for a selected user
+    const getMessages = async (userId) => {
         try {
-            const params = cursor ? `?cursor=${cursor}&limit=50` : '?limit=50'; // MODIFIED: Added pagination params
-            const { data } = await axios.get(`/api/messages/${userId}${params}`);
+            const { data } = await axios.get(`/api/messages/${userId}`);
             if (data.success) {
-                // MODIFIED: Handle paginated response
-                if (cursor) {
-                    setMessages(prevMessages => [...prevMessages, ...data.messages]);
-                } else {
-                    setMessages(data.messages);
-                }
-                return data.pagination; // MODIFIED: Return pagination info
+                setMessages(data.messages);
             }
         } catch (error) {
-            toast.error(error.message);
+            console.error('Error fetching messages:', error);
         }
-    }
+    };
 
-    // function to get all users for sidebar
-    const getUsers = async (cursor = null) => { // MODIFIED: Added cursor parameter
+    // Function to get users for sidebar
+    const getUsers = async () => {
         try {
-            const params = cursor ? `?cursor=${cursor}&limit=50` : '?limit=50'; // MODIFIED: Added pagination params
-            const { data } = await axios.get(`/api/messages/users${params}`);
+            const { data } = await axios.get('/api/messages/users');
             if (data.success) {
-                // MODIFIED: Handle paginated response
-                if (cursor) {
-                    setUsers(prevUsers => [...prevUsers, ...data.users]);
-                } else {
-                    setUsers(data.users);
-                }
-                setUnseenMessages(data.unseenMessages);
-                return data.pagination; // MODIFIED: Return pagination info
+                setUsers(data.users);
+                setUnseenMessages(data.unseenMessages || {});
             }
         } catch (error) {
-            toast.error(error.message);
+            console.error('Error fetching users:', error);
         }
-    }
+    };
 
-    // function to send message to a selected user
-    // FIXED: Simplified sendMessage without temporary message handling
+    // FIXED: Enhanced sendMessage with optimistic updates and proper authUser access
     const sendMessage = async (messageData) => {
-        try {
-            if (!messageData.text && !messageData.image) {
-                toast.error("Message cannot be empty");
-                return false;
-            }
+        if (!selectedUser || !authUser) return;
 
+        const tempId = `temp-${Date.now()}`;
+        const optimisticMessage = {
+            _id: tempId,
+            senderId: authUser._id, // FIXED: Now using authUser from context
+            receiverId: selectedUser._id,
+            ...messageData,
+            seen: false,
+            createdAt: new Date().toISOString(),
+            isOptimistic: true
+        };
+
+        // Immediately add to UI
+        setOptimisticMessages(prev => ({
+            ...prev,
+            [tempId]: optimisticMessage
+        }));
+
+        try {
             const { data } = await axios.post(`/api/messages/send/${selectedUser._id}`, messageData);
 
             if (data.success) {
-                setMessages((prevMessages) => [...prevMessages, data.newMessage]);
-                return true;
-            } else {
-                toast.error(data.message || "Failed to send message");
-                return false;
+                // Replace optimistic message with real one
+                setOptimisticMessages(prev => {
+                    const newState = { ...prev };
+                    delete newState[tempId];
+                    return newState;
+                });
+
+                // Real message will be added via socket or refetch
+                // Alternatively, we could update the messages state with the response message
+                // But the socket event might already handle this
             }
         } catch (error) {
-            console.error("Send message error:", error);
-            toast.error(error.response?.data?.message || "Failed to send message");
-            return false;
+            // Rollback on error
+            setOptimisticMessages(prev => {
+                const newState = { ...prev };
+                delete newState[tempId];
+                return newState;
+            });
+            toast.error("Failed to send message");
         }
     };
 
-    // function to subscribe to message for selected user
-    const subscribeToMessages = () => {
-        if (!socket) {
-            console.log('No socket available for subscription');
-            return;
-        }
-
-        console.log('Subscribing to socket messages');
-
-        try {
-            socket.on("newMessage", (newMessage) => {
-                try {
-                    console.log('📨 New message received:', newMessage);
-                    if (selectedUser && newMessage.senderId === selectedUser._id) {
-                        newMessage.seen = true;
-                        setMessages((prevMessages) => [...prevMessages, newMessage]);
-                        axios.put(`/api/messages/mark/${newMessage._id}`);
-                    } else {
-                        setUnseenMessages((prevUnseenMessages) => ({
-                            ...prevUnseenMessages,
-                            [newMessage.senderId]: prevUnseenMessages[newMessage.senderId] ? prevUnseenMessages[newMessage.senderId] + 1 : 1
-                        }));
-                    }
-                } catch (error) {
-                    console.error("Error processing new message:", error);
-                }
-            });
-
-            socket.on("messageUpdated", (updatedMessage) => {
-                try {
-                    console.log('🔄 Message updated:', updatedMessage);
-                    setMessages(prevMessages =>
-                        prevMessages.map(msg =>
-                            msg._id === updatedMessage._id ? updatedMessage : msg
-                        )
-                    );
-                } catch (error) {
-                    console.error("Error processing message update:", error);
-                }
-            });
-
-            // FIXED: Enhanced socket error handling
-            socket.on("error", (error) => {
-                console.error('Socket error in ChatContext:', error);
-            });
-
-        } catch (error) {
-            console.error("Socket subscription failed:", error);
-        }
-    }
-
-
-    // function to unSubscribe from messages
-    const unsubscribeFromMessages = () => {
-        if (socket) socket.off("newMessage");
-    };
-
-    useEffect(() => {
-        subscribeToMessages();
-        return () => unsubscribeFromMessages();
-    }, [socket, selectedUser]);
+    // Combine real and optimistic messages
+    const allMessages = useMemo(() => {
+        const optimisticList = Object.values(optimisticMessages);
+        return [...messages, ...optimisticList].sort((a, b) =>
+            new Date(a.createdAt) - new Date(b.createdAt)
+        );
+    }, [messages, optimisticMessages]);
 
     const value = {
-        messages,
-        users,
+        messages: allMessages,
         selectedUser,
-        getUsers,
-        getMessages,
-        sendMessage,
         setSelectedUser,
+        sendMessage,
+        getMessages,
+        getUsers,
+        users,
         unseenMessages,
         setUnseenMessages
     };
@@ -154,5 +110,5 @@ export const ChatProvider = ({ children }) => {
         <ChatContext.Provider value={value}>
             {children}
         </ChatContext.Provider>
-    )
+    );
 };

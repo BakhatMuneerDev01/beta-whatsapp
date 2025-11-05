@@ -97,12 +97,14 @@ const ChatContainer = () => {
         {sortedMessages.map((msg, index) => (
           <div key={msg._id || index} className={`flex items-end gap-2 justify-end ${msg.senderId !== authUser._id && 'flex-row-reverse'}`}>
             {msg.image ? (
-              msg.image === 'uploading' ? (
-                // Show uploading placeholder
+              msg.image === 'uploading' || msg.isOptimistic ? (
+                // Show uploading/optimistic state
                 <div className="max-w-[230px] border border-gray-700 rounded-lg overflow-hidden mb-8 p-4 bg-gray-800/50 flex items-center justify-center">
                   <div className="text-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto"></div>
-                    <p className="text-white text-sm mt-2">Uploading...</p>
+                    <p className="text-white text-sm mt-2">
+                      {msg.isOptimistic ? 'Sending...' : 'Uploading...'}
+                    </p>
                   </div>
                 </div>
               ) : (
@@ -110,8 +112,14 @@ const ChatContainer = () => {
                 <img src={msg.image} alt="" className="max-w-[230px] border border-gray-700 rounded-lg overflow-hidden mb-8" />
               )
             ) : (
-              <p className={`p-2 max-w-[200px] md:text-sm font-light rounded-lg mb-8 break-all bg-violet-500/30 text-white ${msg.senderId === authUser._id ? 'rounded-br-none' : 'rounded-bl-none'}`}>
+              <p className={`p-2 max-w-[200px] md:text-sm font-light rounded-lg mb-8 break-all 
+                ${msg.isOptimistic ? 'bg-gray-500/30' : 'bg-violet-500/30'} 
+                ${msg.senderId === authUser._id ? 'rounded-br-none' : 'rounded-bl-none'} 
+                text-white`}>
                 {msg.text}
+                {msg.isOptimistic && (
+                  <span className="block text-xs text-gray-400 mt-1">Sending...</span>
+                )}
               </p>
             )}
             <div className="text-center text-xs">
