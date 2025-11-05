@@ -1,6 +1,4 @@
-// client/src/components/ChatContainer.js |||||||||||||||||||||||||||||||||||||||||||||
-
-import { useContext, useEffect, useRef, useState, useCallback } from "react"
+import { useContext, useEffect, useRef, useState, useCallback, useMemo } from "react"
 import assets, { messagesDummyData } from "../assets/assets"
 import { formatMessageTime } from "../lib/utils";
 import { ChatContext } from "../context/ChatContext";

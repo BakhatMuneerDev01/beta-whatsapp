@@ -1,6 +1,7 @@
+// client/src/components/Sidebar.js
 import { useNavigate } from 'react-router-dom';
 import assets from '../assets/assets';
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useState, useCallback } from 'react'; // MODIFIED: Added useCallback
 import { AuthContext } from '../context/AuthContext';
 import { ChatContext } from '../context/ChatContext';
 
@@ -9,12 +10,37 @@ const Sidebar = () => {
     const { logout, onlineUsers } = useContext(AuthContext);
     const { getUsers, users, selectedUser, setSelectedUser, unseenMessages, setUnseenMessages } = useContext(ChatContext);
 
-    const [input, setInput] = useState(false);
+    const [input, setInput] = useState('');
+    const [debouncedInput, setDebouncedInput] = useState(''); // MODIFIED: Added debounced state
 
     const navigate = useNavigate();
 
-    const filteredUsers = input ? users.filter((user) =>
-        user.fullName.toLowerCase().includes(input.toLowerCase())
+    // MODIFIED: Added debounce function using useCallback for memoization
+    const debounce = useCallback((func, delay) => {
+        let timeoutId;
+        return (...args) => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => func.apply(null, args), delay);
+        };
+    }, []);
+
+    // MODIFIED: Added debounced search handler
+    const debouncedSearch = useCallback(
+        debounce((searchValue) => {
+            setDebouncedInput(searchValue);
+        }, 300),
+        []
+    );
+
+    const handleInputChange = (e) => {
+        const value = e.target.value;
+        setInput(value);
+        debouncedSearch(value); // MODIFIED: Use debounced function
+    };
+
+    // MODIFIED: Use debouncedInput for filtering
+    const filteredUsers = debouncedInput ? users.filter((user) =>
+        user.fullName.toLowerCase().includes(debouncedInput.toLowerCase())
     ) : users;
 
     useEffect(() => {
@@ -45,7 +71,8 @@ const Sidebar = () => {
                 <div className='bg-[#282142] rounded-full flex items-center gap-2 py-3 px-4 mt-5'>
                     <img src={assets.search_icon} alt="Search" className='w-3' />
                     <input type="text"
-                        onChange={(e) => setInput(e.target.value)}
+                        value={input} // MODIFIED: Bind to input state
+                        onChange={handleInputChange} // MODIFIED: Use debounced handler
                         placeholder='Search user...'
                         className='bg-transparent border-none outline-none text-white text-xs placeholder-[#c8c8c8] flex-1'
                     />
