@@ -1,6 +1,6 @@
 // client/src/components/ChatContainer.js |||||||||||||||||||||||||||||||||||||||||||||
 
-import { useContext, useEffect, useRef, useState } from "react"
+import { useContext, useEffect, useRef, useState, useCallback } from "react"
 import assets, { messagesDummyData } from "../assets/assets"
 import { formatMessageTime } from "../lib/utils";
 import { ChatContext } from "../context/ChatContext";
@@ -49,6 +49,13 @@ const ChatContainer = () => {
     setInput(""); // Clear input after sending
   }
 
+  // MODIFIED: Memoized scroll function to prevent recreation on every render
+  const scrollToBottom = useCallback(() => {
+    if (scrollEnd.current) {
+      scrollEnd.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, []);
+
   useEffect(() => {
     if (selectedUser) {
       getMessages(selectedUser._id);
@@ -56,15 +63,16 @@ const ChatContainer = () => {
   }, [selectedUser]);
 
   useEffect(() => {
-    if (scrollEnd.current && messages) {
-      scrollEnd.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]); // Added messages dependency
+    scrollToBottom();
+  }, [messages.length, scrollToBottom]); // MODIFIED: Optimized dependency array
 
   // MODIFIED: Sort messages by timestamp in ascending order (oldest to newest)
-  const sortedMessages = [...messages].sort((a, b) =>
-    new Date(a.createdAt) - new Date(b.createdAt)
-  );
+  // MODIFIED: Memoized sorted messages calculation
+  const sortedMessages = useMemo(() => {
+    return [...messages].sort((a, b) =>
+      new Date(a.createdAt) - new Date(b.createdAt)
+    );
+  }, [messages]);
 
   return selectedUser ? (
     <div className="h-full overflow-scroll relative backdrop-blur-lg">
