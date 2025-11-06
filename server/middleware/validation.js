@@ -38,18 +38,18 @@ export const validateLogin = [
 
 // Validation rules for messages
 // MODIFIED: Updated image validation to handle both base64 strings and placeholder values
+// server/middleware/validation.js
 export const validateMessage = [
     body('text')
         .optional()
         .trim()
         .isLength({ max: 1000 })
-        .escape()
+        // MODIFIED: Removed .escape() to prevent HTML entity encoding
         .withMessage('Message text must not exceed 1000 characters'),
 
     body('image')
         .optional()
         .custom((value) => {
-            // Allow base64 strings, data URLs, or the 'uploading' placeholder
             if (value === 'uploading' || value === null || value === undefined) {
                 return true;
             }
@@ -61,26 +61,24 @@ export const validateMessage = [
         .withMessage('Image must be a valid base64 string or data URL')
 ];
 
-// MODIFIED: Updated profile validation
 export const validateProfile = [
     body('fullName')
         .optional()
         .trim()
         .isLength({ min: 2, max: 50 })
-        .escape()
+        // MODIFIED: Removed .escape() to prevent HTML entity encoding
         .withMessage('Full name must be between 2 and 50 characters'),
 
     body('bio')
         .optional()
         .trim()
         .isLength({ max: 500 })
-        .escape()
+        // MODIFIED: Removed .escape() to prevent HTML entity encoding
         .withMessage('Bio must not exceed 500 characters'),
 
     body('profilePic')
         .optional()
         .custom((value) => {
-            // Allow base64 strings, data URLs, or the 'uploading' placeholder
             if (value === 'uploading' || value === null || value === undefined) {
                 return true;
             }
