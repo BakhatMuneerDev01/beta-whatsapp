@@ -11,7 +11,7 @@ export const ChatProvider = ({ children }) => {
     const [unseenMessages, setUnseenMessages] = useState({});
     const [users, setUsers] = useState([]);
 
-    const { authUser, axios, socket } = useContext(AuthContext); // MODIFIED: Added socket destructuring
+    const { authUser, axios, socket } = useContext(AuthContext);
 
     // Function to get messages for a selected user
     const getMessages = async (userId) => {
@@ -85,12 +85,9 @@ export const ChatProvider = ({ children }) => {
         }
     };
 
-    // FIXED: Add socket event listeners for real-time message updates with null check
+    // FIXED: Add socket event listeners for real-time message updates
     useEffect(() => {
-        if (!socket) {
-            console.log('Socket not available for message updates');
-            return;
-        }
+        if (!socket) return;
 
         const handleNewMessage = (newMessage) => {
             console.log('New message received via socket:', newMessage);
@@ -120,7 +117,7 @@ export const ChatProvider = ({ children }) => {
             socket.off("newMessage", handleNewMessage);
             socket.off("messageUpdated", handleMessageUpdated);
         };
-    }, [socket]); // MODIFIED: Added socket as dependency
+    }, [socket]);
 
     // Combine real and optimistic messages
     const allMessages = useMemo(() => {

@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 
 const ProfilePage = () => {
 
-  const { authUser, updateProfile, axios } = useContext(AuthContext); // MODIFIED: Added axios
+  const { authUser, updateProfile } = useContext(AuthContext);
 
   const [selectedImg, setSelectedImg] = useState(null);
   const navigate = useNavigate();
@@ -18,48 +18,39 @@ const ProfilePage = () => {
     console.log("Starting profile update...");
 
     try {
-      let imageFile = null;
+      let base64Image = null;
 
       if (selectedImg) {
-        console.log("Processing image file directly...");
-        imageFile = selectedImg; // MODIFIED: Use file object directly instead of base64
+        console.log("Processing image...");
+        base64Image = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = error => reject(error);
+          reader.readAsDataURL(selectedImg);
+        });
+        console.log("Image processed, size:", base64Image?.length);
       }
 
       console.log("Calling updateProfile with:", {
         fullName: name,
         bio: bio,
-        hasImage: !!imageFile
+        hasImage: !!base64Image
       });
 
-      const formData = new FormData(); // MODIFIED: Use FormData for file upload
-      formData.append('fullName', name);
-      formData.append('bio', bio);
-      if (imageFile) {
-        formData.append('profilePic', imageFile);
-      }
-
-      // MODIFIED: Use axios directly for the upload
-      const { data } = await axios.put("/api/auth/update-profile", formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
+      const success = await updateProfile({
+        profilePic: base64Image,
+        fullName: name,
+        bio: bio
       });
 
-      console.log("Update response:", data);
+      console.log("Update result:", success);
 
-      if (data.success) {
-        // Update auth user in context if needed
-        toast.success("Profile updated successfully");
+      if (success) {
         navigate('/');
-        return true;
-      } else {
-        toast.error(data.message || "Profile update failed");
-        return false;
       }
     } catch (error) {
       console.error("Error in handleSubmit:", error);
       toast.error("Failed to process profile update");
-      return false;
     }
   };
 
@@ -83,7 +74,7 @@ const ProfilePage = () => {
 
           <button className='bg-gradient-to-r from-purple-400 to-violet-600 text-white p-2 rounded-full text-lg cursor-pointer' type='submit'>Save</button>
         </form>
-        <img src={authUser?.profilePic || assets.logo_icon} alt="" className={`max-w-44 aspect-square rounded-full mx-10 max-sm:mt-10 ${selectedImg && "rounded-full"}`} />
+        <img src={ authUser?.profilePic || assets.logo_icon} alt="" className={`max-w-44 aspect-square rounded-full mx-10 max-sm:mt-10 ${selectedImg && "rounded-full"}`} />
 
       </div>
 

@@ -69,43 +69,57 @@ export const login = async (req, res) => {
 // FIXED: Direct synchronous profile picture upload
 export const updateProfile = async (req, res) => {
     try {
-        const { bio, fullName } = req.body;
-        const profilePicFile = req.file; // MODIFIED: Get file from multer
+        const { profilePic, bio, fullName } = req.body;
         const userId = req.user._id;
 
         const sanitizedFullName = fullName ? fullName.trim().substring(0, 50) : undefined;
         const sanitizedBio = bio ? bio.trim().substring(0, 500) : undefined;
 
-        let updatedUser;
+        let profilePicUrl = null;
 
-        if (!profilePicFile) {
-            updatedUser = await User.findByIdAndUpdate(userId, {
-                bio: sanitizedBio,
-                fullName: sanitizedFullName
-            }, { new: true });
-        } else {
-            // MODIFIED: Process profile picture upload in background with file buffer
-            const job = await imageUploadQueue.add({
-                imageFile: {
-                    buffer: profilePicFile.buffer,
-                    originalname: profilePicFile.originalname,
-                    mimetype: profilePicFile.mimetype
-                },
-                type: 'profile',
-                userId
-            });
+        // FIXED: Upload profile picture synchronously
+        if (profilePic && profilePic !== 'uploading') {
+            try {
+                const base64Data = profilePic.replace(/^data:image\/\w+;base64,/, '');
 
-            // Update user immediately with placeholder
-            updatedUser = await User.findByIdAndUpdate(userId, {
-                profilePic: 'uploading',
-                bio: sanitizedBio,
-                fullName: sanitizedFullName
-            }, { new: true });
+                const uploadResponse = await cloudinary.uploader.upload(
+                    `data:image/webp;base64,${base64Data}`,
+                    {
+                        folder: 'profile_pictures',
+                        resource_type: 'image',
+                        transformation: [
+                            { width: 400, height: 400, crop: 'fill' },
+                            { quality: 'auto' },
+                            { format: 'webp' }
+                        ]
+                    }
+                );
+
+                profilePicUrl = uploadResponse.secure_url;
+                console.log('Profile picture uploaded:', profilePicUrl);
+            } catch (uploadError) {
+                console.error('Profile picture upload failed:', uploadError);
+                return res.status(500).json({
+                    success: false,
+                    message: "Failed to upload profile picture"
+                });
+            }
         }
+
+        // Update user with all fields
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            {
+                ...(profilePicUrl && { profilePic: profilePicUrl }),
+                ...(sanitizedBio && { bio: sanitizedBio }),
+                ...(sanitizedFullName && { fullName: sanitizedFullName })
+            },
+            { new: true }
+        );
 
         res.json({ success: true, user: updatedUser });
     } catch (error) {
         console.log("Error updating profile:", error.message);
         res.status(500).json({ success: false, message: "Internal server error" });
     }
-}
+};
