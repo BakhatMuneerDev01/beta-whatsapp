@@ -157,70 +157,164 @@ export const markMessageAsSeen = async (req, res) => {
 // FIXED: Direct synchronous upload instead of queue
 export const sendMessage = async (req, res) => {
     try {
-        const { text, image } = req.body;
+        const { text } = req.body;
+        const imageFile = req.file; // Get file from multer
         const receiverId = req.params.id;
         const senderId = req.user._id;
 
-        console.log('Send message received:', { text, hasImage: !!image, receiverId, senderId });
+        console.log('Send message received:', {
+            text,
+            hasImage: !!imageFile,
+            imageInfo: imageFile ? {
+                originalname: imageFile.originalname,
+                mimetype: imageFile.mimetype,
+                size: imageFile.size
+            } : null,
+            receiverId,
+            senderId
+        });
 
-        if (!text && !image) {
+        // MODIFIED: Enhanced validation with better error messages
+        if (!text && !imageFile) {
             return res.status(400).json({
                 success: false,
-                message: "Message must contain text or image"
+                message: "Message must contain either text or an image"
             });
         }
 
-        let imageUrl = null;
-
-        // FIXED: Upload image synchronously before creating message
-        if (image && image !== 'uploading') {
-            try {
-                const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
-
-                const uploadResponse = await cloudinary.uploader.upload(
-                    `data:image/webp;base64,${base64Data}`,
-                    {
-                        folder: 'chat_messages',
-                        resource_type: 'image',
-                        transformation: [
-                            { width: 800, height: 800, crop: 'limit' },
-                            { quality: 'auto' },
-                            { format: 'webp' }
-                        ]
-                    }
-                );
-
-                imageUrl = uploadResponse.secure_url;
-                console.log('Image uploaded successfully:', imageUrl);
-            } catch (uploadError) {
-                console.error('Image upload failed:', uploadError);
-                return res.status(500).json({
-                    success: false,
-                    message: "Failed to upload image"
-                });
-            }
+        if (imageFile && !imageFile.buffer) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid image file - please try again"
+            });
         }
 
-        // Create message with uploaded image URL
+        // Create message immediately
         const newMessage = await Message.create({
             senderId,
             receiverId,
             text: text || '',
-            image: imageUrl
+            image: imageFile ? 'uploading' : undefined
         });
 
         console.log('Message created:', newMessage._id);
 
-        // Emit to receiver
-        const receiverSocketId = userSocketMap[receiverId];
-        if (receiverSocketId) {
-            io.to(receiverSocketId).emit("newMessage", newMessage);
-        }
+        // MODIFIED: Return response immediately to prevent client timeout
+        res.json({ success: true, newMessage });
 
-        return res.json({ success: true, newMessage });
+        // If it's an image, process in background (after sending response)
+        if (imageFile) {
+            try {
+                console.log('Adding image upload job to queue...');
+                const job = await imageUploadQueue.add('message-image-upload', {
+                    imageFile: {
+                        buffer: imageFile.buffer,
+                        originalname: imageFile.originalname,
+                        mimetype: imageFile.mimetype
+                    },
+                    type: 'message',
+                    senderId: senderId.toString(),
+                    receiverId: receiverId.toString(),
+                    messageId: newMessage._id.toString()
+                }, {
+                    attempts: 3,
+                    backoff: {
+                        type: 'exponential',
+                        delay: 1000
+                    },
+                    timeout: 60000 // MODIFIED: Increased job timeout
+                });
+
+                console.log('Image upload job created:', job.id);
+
+                // MODIFIED: Handle job completion with better error handling
+                job.finished().then(async (result) => {
+                    try {
+                        console.log('Job finished successfully:', result);
+                        if (result.success) {
+                            await Message.findByIdAndUpdate(newMessage._id, {
+                                image: result.imageUrl
+                            });
+
+                            // Notify clients of updated message
+                            const updatedMessage = await Message.findById(newMessage._id);
+                            console.log('Emitting messageUpdated for successful upload:', updatedMessage._id);
+
+                            const receiverSocketId = userSocketMap[receiverId];
+                            if (receiverSocketId) {
+                                io.to(receiverSocketId).emit("messageUpdated", updatedMessage);
+                            }
+                            // Also notify sender
+                            const senderSocketId = userSocketMap[senderId];
+                            if (senderSocketId) {
+                                io.to(senderSocketId).emit("messageUpdated", updatedMessage);
+                            }
+                        } else {
+                            console.error('Image upload failed in job:', result.error);
+                            await Message.findByIdAndUpdate(newMessage._id, {
+                                image: null,
+                                text: text ? `${text} [Image upload failed]` : '[Image upload failed]'
+                            });
+
+                            // MODIFIED: Notify clients about upload failure
+                            const failedMessage = await Message.findById(newMessage._id);
+                            const receiverSocketId = userSocketMap[receiverId];
+                            if (receiverSocketId) {
+                                io.to(receiverSocketId).emit("messageUpdated", failedMessage);
+                            }
+                            const senderSocketId = userSocketMap[senderId];
+                            if (senderSocketId) {
+                                io.to(senderSocketId).emit("messageUpdated", failedMessage);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error processing upload completion:', error);
+                    }
+                }).catch(async (error) => {
+                    console.error('Job failed completely:', error);
+                    // MODIFIED: Handle complete job failure
+                    await Message.findByIdAndUpdate(newMessage._id, {
+                        image: null,
+                        text: text ? `${text} [Image upload failed]` : '[Image upload failed]'
+                    });
+
+                    const failedMessage = await Message.findById(newMessage._id);
+                    const receiverSocketId = userSocketMap[receiverId];
+                    if (receiverSocketId) {
+                        io.to(receiverSocketId).emit("messageUpdated", failedMessage);
+                    }
+                    const senderSocketId = userSocketMap[senderId];
+                    if (senderSocketId) {
+                        io.to(senderSocketId).emit("messageUpdated", failedMessage);
+                    }
+                });
+
+            } catch (jobError) {
+                console.error('Failed to create job:', jobError);
+                // If job creation fails, update message to indicate failure
+                await Message.findByIdAndUpdate(newMessage._id, {
+                    image: null,
+                    text: text ? `${text} [Image upload failed]` : '[Image upload failed]'
+                });
+
+                // MODIFIED: Notify about job creation failure
+                const failedMessage = await Message.findById(newMessage._id);
+                const receiverSocketId = userSocketMap[receiverId];
+                if (receiverSocketId) {
+                    io.to(receiverSocketId).emit("messageUpdated", failedMessage);
+                }
+                const senderSocketId = userSocketMap[senderId];
+                if (senderSocketId) {
+                    io.to(senderSocketId).emit("messageUpdated", failedMessage);
+                }
+            }
+        }
 
     } catch (error) {
         console.log("Send message error:", error.message);
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({
+            success: false,
+            message: "Failed to send message"
+        });
     }
 };

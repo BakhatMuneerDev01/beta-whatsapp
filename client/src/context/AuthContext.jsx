@@ -17,7 +17,7 @@ export const AuthProvider = ({ children }) => {
     const [token, setToken] = useState(localStorage.getItem("token"));
     const [authUser, setAuthUser] = useState(null);
     const [onlineUsers, setOnlineUsers] = useState([]);
-    const [socket, setSocket] = useState(null);
+    const [socket, setSocket] = useState(null); // MODIFIED: Ensure socket state is defined
 
     // check if user is authenticated. If yes, set the user data and connect to socket
     const checkAuth = async () => {
@@ -75,6 +75,7 @@ export const AuthProvider = ({ children }) => {
         toast.success("Logged out successfully");
         if (socket && typeof socket.disconnect === 'function') {
             socket.disconnect();
+            setSocket(null); // MODIFIED: Clear socket state on logout
         }
     }
     // Update profile function to handle user profile updates
@@ -112,6 +113,7 @@ export const AuthProvider = ({ children }) => {
             // Disconnect existing socket
             if (socket) {
                 socket.disconnect();
+                setSocket(null);
             }
 
             console.log('Connecting socket to:', backendUrl);
@@ -159,12 +161,14 @@ export const AuthProvider = ({ children }) => {
         } catch (error) {
             console.error("Socket setup failed:", error.message);
             // FIXED: Graceful degradation - app continues without socket
+            setSocket(null);
         }
     };
 
     useEffect(() => {
         console.log("Current token:", token);
         console.log("Current authUser:", authUser);
+        console.log("Current socket state:", socket ? "connected" : "disconnected");
 
         if (token) {
             axios.defaults.headers.common["token"] = token;
@@ -178,7 +182,7 @@ export const AuthProvider = ({ children }) => {
         axios,
         authUser,
         onlineUsers,
-        socket,
+        socket, // MODIFIED: Ensure socket is included in context value
         login,
         logout,
         updateProfile

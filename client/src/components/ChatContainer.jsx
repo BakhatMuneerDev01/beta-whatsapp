@@ -14,10 +14,12 @@ const ChatContainer = () => {
     getMessages
   } = useContext(ChatContext);
 
-  const { authUser, onlineUsers } = useContext(AuthContext);
+  const { authUser, onlineUsers, axios } = useContext(AuthContext);
 
   const scrollEnd = useRef();
   const [input, setInput] = useState('');
+  // MODIFIED: Add local state for optimistic messages since it's not in ChatContext
+  const [optimisticMessages, setOptimisticMessages] = useState({});
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -32,12 +34,73 @@ const ChatContainer = () => {
       toast.error("select an image file")
       return;
     }
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      await sendMessage({ image: reader.result });
-      e.target.value = ""; // Fixed typo: 'ke' to 'e'
+
+    // MODIFIED: Use object URL for immediate preview instead of base64
+    const objectUrl = URL.createObjectURL(file);
+
+    // Send optimistic message with object URL for immediate UI feedback
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMessage = {
+      _id: tempId,
+      senderId: authUser._id,
+      receiverId: selectedUser._id,
+      image: objectUrl,
+      seen: false,
+      createdAt: new Date().toISOString(),
+      isOptimistic: true
+    };
+
+    setOptimisticMessages(prev => ({
+      ...prev,
+      [tempId]: optimisticMessage
+    }));
+
+    try {
+      // MODIFIED: Create FormData and send file directly with proper error handling
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const { data } = await axios.post(`/api/messages/send/${selectedUser._id}`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        },
+        timeout: 60000 // MODIFIED: Increased timeout to 60 seconds for large images
+      });
+
+      if (data.success) {
+        // Clean up object URL after successful upload
+        URL.revokeObjectURL(objectUrl);
+        setOptimisticMessages(prev => {
+          const newState = { ...prev };
+          delete newState[tempId];
+          return newState;
+        });
+      }
+    } catch (error) {
+      console.error('Image upload failed:', error);
+      // Clean up object URL on error
+      URL.revokeObjectURL(objectUrl);
+      setOptimisticMessages(prev => {
+        const newState = { ...prev };
+        delete newState[tempId];
+        return newState;
+      });
+
+      // MODIFIED: Better error messaging with specific guidance
+      if (error.code === 'ECONNABORTED') {
+        toast.error("Upload taking too long - try a smaller image or better connection");
+      } else if (error.response?.status === 413) {
+        toast.error("Image too large - please select a file under 5MB");
+      } else if (error.response?.data?.message) {
+        toast.error(`Upload failed: ${error.response.data.message}`);
+      } else if (!navigator.onLine) {
+        toast.error("No internet connection - please check your network");
+      } else {
+        toast.error("Failed to send image - server may be unavailable");
+      }
     }
-    reader.readAsDataURL(file);
+
+    e.target.value = "";
   }
 
   // Add this function for send button click
@@ -64,13 +127,13 @@ const ChatContainer = () => {
     scrollToBottom();
   }, [messages.length, scrollToBottom]); // MODIFIED: Optimized dependency array
 
-  // MODIFIED: Sort messages by timestamp in ascending order (oldest to newest)
-  // MODIFIED: Memoized sorted messages calculation
-  const sortedMessages = useMemo(() => {
-    return [...messages].sort((a, b) =>
+  // MODIFIED: Combine real messages with optimistic messages for display
+  const allMessages = useMemo(() => {
+    const optimisticList = Object.values(optimisticMessages);
+    return [...messages, ...optimisticList].sort((a, b) =>
       new Date(a.createdAt) - new Date(b.createdAt)
     );
-  }, [messages]);
+  }, [messages, optimisticMessages]);
 
   return selectedUser ? (
     <div className="h-full overflow-scroll relative backdrop-blur-lg">
@@ -93,8 +156,8 @@ const ChatContainer = () => {
 
       {/* ----------Chat area--------- */}
       <div className="flex flex-col h-[calc(100%-120px)] overflow-y-scroll p-3 pb-6">
-        {/* MODIFIED: Use sortedMessages instead of messages */}
-        {sortedMessages.map((msg, index) => (
+        {/* MODIFIED: Use allMessages (combined real + optimistic) instead of just messages */}
+        {allMessages.map((msg, index) => (
           <div key={msg._id || index} className={`flex items-end gap-2 justify-end ${msg.senderId !== authUser._id && 'flex-row-reverse'}`}>
             {msg.image ? (
               msg.image === 'uploading' || msg.isOptimistic ? (
