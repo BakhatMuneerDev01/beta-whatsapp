@@ -5,6 +5,7 @@ import ProfilePage from './pages/ProfilePage';
 import { Toaster } from 'react-hot-toast';
 import { useContext } from 'react';
 import { AuthContext } from './context/AuthContext';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const App = () => {
 
@@ -13,11 +14,13 @@ const App = () => {
   return (
     <div className="bg-[url('/bgImage.svg')] bg-contain" >
       <Toaster />
-      <Routes>
-        <Route path='/' element={authUser ? <HomePage /> : <Navigate to="/login" />} />
-        <Route path='/login' element={!authUser ? <LoginPage /> : <Navigate to="/" />} />
-        <Route path='/profile' element={authUser ? <ProfilePage /> : <Navigate to="/login" />} />
-      </Routes>
+      <ErrorBoundary>
+        <Routes>
+          <Route path='/' element={authUser ? <HomePage /> : <Navigate to="/login" />} />
+          <Route path='/login' element={!authUser ? <LoginPage /> : <Navigate to="/" />} />
+          <Route path='/profile' element={authUser ? <ProfilePage /> : <Navigate to="/login" />} />
+        </Routes>
+      </ErrorBoundary>
     </div >
   )
 }
