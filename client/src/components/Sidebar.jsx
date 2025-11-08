@@ -1,21 +1,27 @@
-// client/src/components/Sidebar.js
 import { useNavigate } from 'react-router-dom';
 import assets from '../assets/assets';
-import { useContext, useEffect, useState, useCallback } from 'react'; // MODIFIED: Added useCallback
+import { useContext, useEffect, useState, useCallback } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { ChatContext } from '../context/ChatContext';
+import { useQueryClient } from '@tanstack/react-query';
 
-const Sidebar = () => {
-
+const Sidebar = ({ onShowChangelog }) => { // MODIFIED: Added changelog callback prop
     const { logout, onlineUsers } = useContext(AuthContext);
-    const { getUsers, users, selectedUser, setSelectedUser, unseenMessages, setUnseenMessages } = useContext(ChatContext);
+    const {
+        users,
+        selectedUser,
+        setSelectedUser,
+        unseenMessages,
+        setUnseenMessages,
+        getUsers
+    } = useContext(ChatContext);
 
     const [input, setInput] = useState('');
-    const [debouncedInput, setDebouncedInput] = useState(''); // MODIFIED: Added debounced state
+    const [debouncedInput, setDebouncedInput] = useState('');
+    const queryClient = useQueryClient();
 
     const navigate = useNavigate();
 
-    // MODIFIED: Added debounce function using useCallback for memoization
     const debounce = useCallback((func, delay) => {
         let timeoutId;
         return (...args) => {
@@ -24,7 +30,6 @@ const Sidebar = () => {
         };
     }, []);
 
-    // MODIFIED: Added debounced search handler
     const debouncedSearch = useCallback(
         debounce((searchValue) => {
             setDebouncedInput(searchValue);
@@ -35,17 +40,18 @@ const Sidebar = () => {
     const handleInputChange = (e) => {
         const value = e.target.value;
         setInput(value);
-        debouncedSearch(value); // MODIFIED: Use debounced function
+        debouncedSearch(value);
     };
 
-    // MODIFIED: Use debouncedInput for filtering
-    const filteredUsers = debouncedInput ? users.filter((user) =>
+    const filteredUsers = debouncedInput ? (users || []).filter((user) =>
         user.fullName.toLowerCase().includes(debouncedInput.toLowerCase())
-    ) : users;
+    ) : (users || []);
 
     useEffect(() => {
-        getUsers();
-    }, [onlineUsers])
+        if (onlineUsers.length > 0) {
+            queryClient.invalidateQueries({ queryKey: ['users'] });
+        }
+    }, [onlineUsers, queryClient]);
 
     return (
         <div className={`bg-[#8185B2]/10 h-full p-5 rounded-r-xl overflow-y-scroll text-white ${selectedUser ? "max-md:hidden" : ""}`}>
@@ -55,14 +61,23 @@ const Sidebar = () => {
                     <img src={assets.logo} alt="Logo" className='max-w-40' />
                     <div className='relative py-2 group'>
                         <img src={assets.menu_icon} alt="logo" className='max-h-5 cursor-pointer' />
-                        <div className='absolute top-full right-0 z-20 w-32 p-5 rounded-md bg-[#282142] border border-gray-600 text-gray-100 hidden group-hover:block'>
+                        <div className='absolute top-full right-0 z-20 w-48 p-4 rounded-md bg-[#282142] border border-gray-600 text-gray-100 hidden group-hover:block'> {/* MODIFIED: Increased width */}
                             <p
                                 onClick={() => navigate('/profile')}
-                                className='cursor-pointer text-sm'>Edit Profile</p>
+                                className='cursor-pointer text-sm py-1 hover:text-white'>Edit Profile</p>
+                            <hr className='my-2 border-t border-gray-500' />
+                            {/* MODIFIED: Added changelog menu item */}
+                            <p
+                                onClick={onShowChangelog}
+                                className='cursor-pointer text-sm py-1 hover:text-white flex items-center gap-2'>
+                                <img src={assets.code} alt="Changelog" className='w-4 h-4' />
+                                View Changelog
+                            </p>
                             <hr className='my-2 border-t border-gray-500' />
                             <p
                                 onClick={() => logout()}
-                                className='cursor-pointer text-sm'>Logout
+                                className='cursor-pointer text-sm py-1 hover:text-white'>
+                                Logout
                             </p>
                         </div>
                     </div>

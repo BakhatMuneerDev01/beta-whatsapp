@@ -109,10 +109,12 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // Api's imports
 import userRouter from './routes/userRoutes.js';
 import messageRouter from './routes/messageRoutes.js';
+import changelogRouter from './routes/changelogRoutes.js';
 
 // Api's setup
 app.use("/api/auth", authLimiter, userRouter);
 app.use("/api/messages", messageLimiter, messageRouter);
+app.use("/api/changelog", changelogRouter); // MODIFIED: Add changelog routes
 
 app.use("/api/status", (req, res) => res.send("Server is live"));
 
