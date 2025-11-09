@@ -5,6 +5,7 @@ import http from 'http';
 import connectDB from './lib/db.js';
 import { Server } from 'socket.io';
 import rateLimit from 'express-rate-limit';
+import Changelog from './models/Changelog.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -118,8 +119,70 @@ app.use("/api/changelog", changelogRouter); // MODIFIED: Add changelog routes
 
 app.use("/api/status", (req, res) => res.send("Server is live"));
 
+// Replace your current initializeChangelog function with this:
+
+const initializeChangelog = async () => {
+    try {
+        // Check if MongoDB is connected first
+        const mongoose = await import('mongoose');
+        if (mongoose.connection.readyState !== 1) {
+            console.log('⏳ Waiting for database connection...');
+            // Wait for connection with timeout
+            await new Promise((resolve, reject) => {
+                const checkConnection = () => {
+                    if (mongoose.connection.readyState === 1) {
+                        resolve();
+                    } else if (mongoose.connection.readyState === 0) {
+                        setTimeout(checkConnection, 100);
+                    } else {
+                        reject(new Error('Database connection failed'));
+                    }
+                };
+                setTimeout(() => reject(new Error('Connection timeout')), 15000);
+                checkConnection();
+            });
+        }
+
+        console.log('✅ Database connected, initializing changelog...');
+
+        const Changelog = (await import('./models/Changelog.js')).default;
+        const count = await Changelog.countDocuments().maxTimeMS(15000);
+
+        if (count === 0) {
+            const realChangelogData = [
+                // ... (use the same data from previous message)
+                {
+                    version: "1.3.0",
+                    type: "feature",
+                    description: "Added development changelog panel to track application updates",
+                    breaking: false,
+                    date: new Date()
+                },
+                {
+                    version: "1.3.0",
+                    type: "improvement",
+                    description: "Implemented React Query for efficient data caching and synchronization",
+                    breaking: false,
+                    date: new Date()
+                },
+                // Add more entries as needed
+            ];
+
+            await Changelog.insertMany(realChangelogData);
+            console.log('✅ Changelog initialized with real application changes');
+        } else {
+            console.log(`✅ Changelog already has ${count} entries`);
+        }
+    } catch (error) {
+        console.error('❌ Error initializing changelog:', error.message);
+        // Don't crash the server if changelog fails
+    }
+};
+
 // connect to database
 await connectDB();
+await new Promise(resolve => setTimeout(resolve, 2000));
+await initializeChangelog();
 
 if (process.env.NODE_ENV !== "production") {
     const PORT = process.env.PORT || 5000;

@@ -38,6 +38,13 @@ export const ChatProvider = ({ children }) => {
         }
     };
 
+    // FIX: Add useEffect to automatically fetch users when authUser is available
+    useEffect(() => {
+        if (authUser) {
+            getUsers();
+        }
+    }, [authUser]);
+
     // FIXED: Enhanced sendMessage with proper optimistic update handling
     const sendMessage = async (messageData) => {
         if (!selectedUser || !authUser) return;
